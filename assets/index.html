@@ -40,6 +40,13 @@
             --color-warning: #d29922;
             --color-caution: #f85149;
             --color-important: #a371f7;
+            /* Heading accent colors */
+            --color-h1: #58a6ff;
+            --color-h2: #a371f7;
+            --color-h3: #3fb950;
+            --color-h4: #39d2c0;
+            --color-h5: #d29922;
+            --color-h6: #8b949e;
         }
 
         [data-theme="light"] {
@@ -70,6 +77,13 @@
             --color-warning: #9a6700;
             --color-caution: #d1242f;
             --color-important: #8250df;
+            /* Heading accent colors */
+            --color-h1: #0969da;
+            --color-h2: #8250df;
+            --color-h3: #1a7f37;
+            --color-h4: #0e8a7e;
+            --color-h5: #9a6700;
+            --color-h6: #656d76;
         }
 
         /* ── Reset & base ──────────────────────────────────────────────── */
@@ -293,31 +307,48 @@
         #content h1 {
             font-size: 2em;
             border-bottom: 1px solid var(--stroke);
+            border-left: 3px solid var(--color-h1);
             padding-bottom: .3em;
+            padding-left: .6em;
             margin: 1.5em 0 .5em;
         }
 
         #content h2 {
             font-size: 1.5em;
             border-bottom: 1px solid var(--stroke);
+            border-left: 3px solid var(--color-h2);
             padding-bottom: .25em;
+            padding-left: .6em;
             margin: 1.4em 0 .5em;
         }
 
         #content h3 {
             font-size: 1.25em;
+            border-left: 3px solid var(--color-h3);
+            padding-left: .6em;
             margin: 1.3em 0 .4em;
         }
 
         #content h4 {
             font-size: 1em;
+            border-left: 3px solid var(--color-h4);
+            padding-left: .6em;
             margin: 1.2em 0 .4em;
         }
 
-        #content h5,
+        #content h5 {
+            font-size: .875em;
+            color: var(--fg-muted);
+            border-left: 3px solid var(--color-h5);
+            padding-left: .6em;
+            margin: 1em 0 .4em;
+        }
+
         #content h6 {
             font-size: .875em;
             color: var(--fg-muted);
+            border-left: 3px solid var(--color-h6);
+            padding-left: .6em;
             margin: 1em 0 .4em;
         }
 
@@ -1026,7 +1057,7 @@
         }
 
         async function renderAllMermaidBlocks() {
-            const blocks = contentEl.querySelectorAll('.mermaid-block[data-mermaid-source]');
+            const blocks = contentEl.querySelectorAll('.mermaid-block[data-mermaid-source]:not([data-prerendered])');
             for (const block of blocks) {
                 await renderMermaidBlock(block);
             }

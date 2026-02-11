@@ -8,7 +8,8 @@ Live **Markdown preview** for Neovim with first-class **Mermaid diagram** suppor
 - **Mermaid diagrams** render inline as interactive SVGs (click to expand, zoom, pan, export)
 - **Instant updates** via Server-Sent Events (no polling)
 - **Syntax highlighting** for code blocks (highlight.js)
-- Dark / Light theme toggle
+- Dark / Light theme toggle with colored heading accents
+- **Optional Rust-powered rendering** — use [`mermaid-rs-renderer`](https://github.com/mermaid-rs/mermaid-rs-renderer) for ~400x faster mermaid diagrams
 - **Zero external dependencies** — no npm, no Node.js, just Neovim + your browser
 - Powered by [`live-server.nvim`](https://github.com/selimacerbas/live-server.nvim) (pure Lua HTTP server)
 
@@ -68,7 +69,7 @@ For **other non-markdown files**, place your cursor inside a fenced ```` ```merm
 
 The preview opens a polished browser app with:
 
-- **Full Markdown rendering** — GitHub-flavored styling for headings, lists, tables, blockquotes, code, images, links, horizontal rules
+- **Full Markdown rendering** — GitHub-flavored styling with colored heading borders, lists, tables, blockquotes, code, images, links, horizontal rules
 - **Syntax-highlighted code blocks** — powered by highlight.js, with language badges
 - **Interactive Mermaid diagrams** — rendered inline as SVGs:
   - Hover a diagram to reveal the **expand button**
@@ -99,6 +100,8 @@ require("markdown_preview").setup({
   },
   debounce_ms = 300,                    -- debounce interval
   notify_on_refresh = false,            -- show notification on refresh
+
+  mermaid_renderer = "js",              -- "js" (browser mermaid.js) or "rust" (mmdr CLI, ~400x faster)
 })
 ```
 
@@ -109,6 +112,7 @@ require("markdown_preview").setup({
 ```mermaid
 graph LR
     A[Neovim Buffer] -->|write| B[content.md]
+    A -.->|optional: mmdr| B
     B -->|fs watch| C[live-server.nvim]
     C -->|SSE| D[Browser]
     D --> E[markdown-it]
@@ -142,6 +146,7 @@ SSE event --> Browser
 Rendered preview (scroll preserved, no flicker)
 ```
 
+- **Rust renderer** (`mermaid_renderer = "rust"`): mermaid fences are pre-rendered to SVG via the `mmdr` CLI before writing to `content.md` — the browser receives ready-made SVGs with no mermaid.js overhead. Failed blocks fall back to browser-side rendering automatically.
 - **Markdown files**: The entire buffer is written to `content.md`
 - **Mermaid files** (`.mmd`, `.mermaid`): The entire buffer is wrapped in a mermaid code fence
 - **Other files**: The mermaid block under the cursor is extracted (via Tree-sitter or regex fallback) and wrapped in a code fence
@@ -156,6 +161,7 @@ Rendered preview (scroll preserved, no flicker)
 - **Neovim** 0.9+
 - **[live-server.nvim](https://github.com/selimacerbas/live-server.nvim)** — pure Lua HTTP server (no npm)
 - **Tree-sitter** with the **Markdown** parser (recommended for mermaid block extraction)
+- **[mermaid-rs-renderer](https://github.com/mermaid-rs/mermaid-rs-renderer)** (optional) — `cargo install mermaid-rs-renderer` for ~400x faster mermaid rendering. Set `mermaid_renderer = "rust"` in config to enable.
 
 Browser-side libraries are loaded from CDN (cached by your browser):
 - [markdown-it](https://github.com/markdown-it/markdown-it) — Markdown parser
