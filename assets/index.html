@@ -1171,6 +1171,15 @@
             evtSource.addEventListener('reload', async () => {
                 await sync(false);
             });
+            evtSource.addEventListener('scroll', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.headingId) {
+                        const el = document.getElementById(data.headingId);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } catch (_) {}
+            });
             evtSource.addEventListener('open', () => {
                 console.log('[markdown-preview] SSE connected');
                 sseConnected = true;
