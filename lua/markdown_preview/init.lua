@@ -26,7 +26,7 @@ M.config = {
 	-- "rust" = pre-render via mermaid-rs-renderer (mmdr) CLI (~400x faster)
 	mermaid_renderer = "js",
 
-	scroll_sync = true, -- sync browser scroll to cursor heading
+	scroll_sync = true, -- sync browser scroll to cursor position
 }
 
 function M.setup(opts)
@@ -42,7 +42,7 @@ M._server_instance = nil
 M._debounce_seq = 0
 M._workspace_dir = nil
 M._mmdr_available = nil -- nil = unchecked, true/false after probe
-M._last_heading_id = nil
+M._last_scroll_line = nil
 
 ---------------------------------------------------------------------------
 -- Workspace
@@ -320,36 +320,18 @@ local function debounced_refresh(bufnr)
 end
 
 ---------------------------------------------------------------------------
--- Scroll sync (heading-based)
+-- Scroll sync (line-based)
 ---------------------------------------------------------------------------
 
---- Slugify a heading string — must match browser-side markdown-it-anchor slugify:
----   s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')
-local function slugify(s)
-	return s:match("^%s*(.-)%s*$"):lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
-end
-
---- Find the nearest heading above (or at) the cursor and return its slug.
-local function find_heading_at_cursor(bufnr)
-	local row = vim.api.nvim_win_get_cursor(0)[1] -- 1-indexed
-	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, row, false)
-	for i = #lines, 1, -1 do
-		local hashes, text = lines[i]:match("^(#+)%s+(.+)")
-		if hashes and #hashes <= 6 then
-			return slugify(text)
-		end
-	end
-	return nil
-end
-
---- Send a scroll SSE event if the heading under the cursor changed.
+--- Send cursor line to browser for scroll sync.
 local function send_scroll_sync(bufnr)
 	if not M.config.scroll_sync then return end
 	if not M._server_instance then return end
-	local id = find_heading_at_cursor(bufnr)
-	if not id or id == M._last_heading_id then return end
-	M._last_heading_id = id
-	local payload = vim.json.encode({ headingId = id })
+	local cursor_line = vim.api.nvim_win_get_cursor(0)[1] -- 1-based
+	if cursor_line == M._last_scroll_line then return end
+	M._last_scroll_line = cursor_line
+	local total = vim.api.nvim_buf_line_count(bufnr)
+	local payload = vim.json.encode({ line = cursor_line - 1, total = total })
 	pcall(ls_server.send_event, M._server_instance, "scroll", payload)
 end
 
@@ -471,7 +453,7 @@ function M.stop()
 		M._server_instance = nil
 	end
 	M._workspace_dir = nil
-	M._last_heading_id = nil
+	M._last_scroll_line = nil
 end
 
 return M

@@ -302,6 +302,7 @@
         #content h5,
         #content h6 {
             position: relative;
+            scroll-margin-top: 3.2rem;
         }
 
         #content h1 {
@@ -888,6 +889,23 @@
         let sseConnected = false;
         const loadedPacks = new Set();
 
+        // Scroll sync state
+        let scrollSyncPaused = false;
+        let scrollSyncPauseTimer = null;
+        let lastScrollData = null;
+
+        // Pause scroll sync briefly when user scrolls the browser manually
+        window.addEventListener('wheel', () => {
+            scrollSyncPaused = true;
+            clearTimeout(scrollSyncPauseTimer);
+            scrollSyncPauseTimer = setTimeout(() => { scrollSyncPaused = false; }, 3000);
+        }, { passive: true });
+        window.addEventListener('touchmove', () => {
+            scrollSyncPaused = true;
+            clearTimeout(scrollSyncPauseTimer);
+            scrollSyncPauseTimer = setTimeout(() => { scrollSyncPaused = false; }, 3000);
+        }, { passive: true });
+
         // Overlay state
         let ovSvgSource = '';
         let ovBaseW = 0, ovBaseH = 0;
@@ -975,23 +993,44 @@
             });
         }
 
+        // Line number injection for scroll sync (à la peek.nvim / iamcco)
+        function injectLineNumbers(tokens, idx, options, env, slf) {
+            if (tokens[idx].map) {
+                tokens[idx].attrJoin('class', 'source-line');
+                tokens[idx].attrSet('data-source-line', String(tokens[idx].map[0]));
+            }
+            return slf.renderToken(tokens, idx, options, env, slf);
+        }
+        md.renderer.rules.paragraph_open = injectLineNumbers;
+        md.renderer.rules.heading_open = injectLineNumbers;
+        md.renderer.rules.list_item_open = injectLineNumbers;
+        md.renderer.rules.table_open = injectLineNumbers;
+        md.renderer.rules.blockquote_open = injectLineNumbers;
+
         // Override fence renderer to handle mermaid specially
         const defaultFence = md.renderer.rules.fence;
         md.renderer.rules.fence = function (tokens, idx, options, env, self) {
             const token = tokens[idx];
             const info = token.info ? token.info.trim().toLowerCase() : '';
+            const lineAttr = token.map ? ` data-source-line="${token.map[0]}"` : '';
             if (info === 'mermaid') {
                 const encoded = encodeURIComponent(token.content);
                 const stableId = 'mmd-' + idx;
-                return `<div class="mermaid-block" id="${stableId}" data-mermaid-source="${encoded}" data-graph="mermaid">` +
+                return `<div class="mermaid-block source-line"${lineAttr} id="${stableId}" data-mermaid-source="${encoded}" data-graph="mermaid">` +
                     `<button class="mermaid-expand-btn" title="Expand diagram" data-expand="${stableId}">` +
                     `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
                     `</button>` +
                     `<div class="mermaid-svg-wrap"><p style="color:var(--fg-muted);font-size:.85rem">Rendering&hellip;</p></div>` +
                     `</div>`;
             }
-            if (defaultFence) return defaultFence(tokens, idx, options, env, self);
-            return self.renderToken(tokens, idx, options);
+            let html;
+            if (defaultFence) {
+                html = defaultFence(tokens, idx, options, env, self);
+            } else {
+                html = self.renderToken(tokens, idx, options);
+            }
+            if (lineAttr) html = html.replace(/^<pre\b/, `<pre${lineAttr}`);
+            return html;
         };
 
         // ── Iconify auto-detection ────────────────────────────────────
@@ -1165,6 +1204,57 @@
             }
         }
 
+        // ── Scroll sync (line-based interpolation) ─────────────────────
+        function getElementOffset(el) {
+            let current = el;
+            let top = 0;
+            while (top === 0 && current) {
+                top = current.getBoundingClientRect().top;
+                current = current.parentElement;
+            }
+            return top + window.scrollY;
+        }
+
+        function scrollToSourceLine(line, total) {
+            const elements = contentEl.querySelectorAll('[data-source-line]');
+            if (!elements.length) return;
+
+            // Edge: first or last line
+            if (line <= 0) { window.scrollTo({ top: 0 }); return; }
+            if (line >= total - 1) { window.scrollTo({ top: document.documentElement.scrollHeight }); return; }
+
+            // Find element at/before cursor line and the one after
+            let prev = null, next = null;
+            for (const el of elements) {
+                const elLine = Number(el.dataset.sourceLine);
+                if (elLine <= line) {
+                    prev = { el, line: elLine };
+                } else {
+                    next = { el, line: elLine };
+                    break;
+                }
+            }
+
+            if (!prev) { window.scrollTo({ top: 0 }); return; }
+
+            const prevTop = getElementOffset(prev.el);
+            let offsetTop;
+
+            if (next) {
+                const nextTop = getElementOffset(next.el);
+                const ratio = (line - prev.line) / (next.line - prev.line);
+                offsetTop = prevTop + (nextTop - prevTop) * ratio;
+            } else {
+                // Last element — extrapolate using its height
+                const h = prev.el.getBoundingClientRect().height;
+                const linesLeft = Math.max(1, total - prev.line);
+                offsetTop = prevTop + (line - prev.line) * (h / linesLeft);
+            }
+
+            // Center the target line in the viewport
+            window.scrollTo({ top: Math.max(0, offsetTop - window.innerHeight / 2) });
+        }
+
         // ── SSE (Server-Sent Events from live-server.nvim) ────────────
         function connectSSE() {
             const evtSource = new EventSource('/__live/events');
@@ -1172,12 +1262,12 @@
                 await sync(false);
             });
             evtSource.addEventListener('scroll', (event) => {
+                if (scrollSyncPaused) return;
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.headingId) {
-                        const el = document.getElementById(data.headingId);
-                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
+                    if (data.line == null) return;
+                    lastScrollData = data;
+                    scrollToSourceLine(data.line, data.total || 1);
                 } catch (_) {}
             });
             evtSource.addEventListener('open', () => {
@@ -1319,6 +1409,13 @@
             const svg = wrap.innerHTML;
             if (svg) openOverlay(svg);
         });
+
+        // Re-apply scroll when layout shifts (images loading, etc.)
+        new ResizeObserver(() => {
+            if (lastScrollData && !scrollSyncPaused) {
+                scrollToSourceLine(lastScrollData.line, lastScrollData.total || 1);
+            }
+        }).observe(contentEl);
 
         // ── Boot ──────────────────────────────────────────────────────
         (async function boot() {

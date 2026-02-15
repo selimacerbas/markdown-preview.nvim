@@ -83,7 +83,7 @@ The preview opens a polished browser app with:
 - **Dark / Light theme** toggle (sun/moon icon in header)
 - **Live connection indicator** — green dot when SSE is connected
 - **Per-diagram error handling** — if one mermaid block is invalid, only that block shows an error; the rest of the page renders fine
-- **Scroll sync** — browser follows your cursor, scrolling to the active heading section
+- **Scroll sync** — browser follows your cursor position with line-level precision
 - **Iconify auto-detection** — icon packs like `logos:google-cloud` are loaded on demand
 
 ---
@@ -110,7 +110,7 @@ require("markdown_preview").setup({
 
   mermaid_renderer = "js",              -- "js" (browser mermaid.js) or "rust" (mmdr CLI, ~400x faster)
 
-  scroll_sync = true,                   -- browser scrolls to heading as cursor moves
+  scroll_sync = true,                   -- browser follows cursor position
 })
 ```
 
