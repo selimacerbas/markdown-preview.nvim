@@ -6,7 +6,7 @@ Live **Markdown preview** for Neovim with first-class **Mermaid diagram** suppor
 
 - Renders your entire `.md` file in the browser — headings, tables, code blocks, everything
 - **Mermaid diagrams** render inline as interactive SVGs (click to expand, zoom, pan, export)
-- **Instant updates** via Server-Sent Events (no polling)
+- **Instant updates** via Server-Sent Events (no polling) with **scroll sync** — browser follows your cursor
 - **Syntax highlighting** for code blocks (highlight.js)
 - Dark / Light theme toggle with colored heading accents
 - **Optional Rust-powered rendering** — use [`mermaid-rs-renderer`](https://github.com/mermaid-rs/mermaid-rs-renderer) for ~400x faster mermaid diagrams
@@ -83,6 +83,7 @@ The preview opens a polished browser app with:
 - **Dark / Light theme** toggle (sun/moon icon in header)
 - **Live connection indicator** — green dot when SSE is connected
 - **Per-diagram error handling** — if one mermaid block is invalid, only that block shows an error; the rest of the page renders fine
+- **Scroll sync** — browser follows your cursor, scrolling to the active heading section
 - **Iconify auto-detection** — icon packs like `logos:google-cloud` are loaded on demand
 
 ---
@@ -108,6 +109,8 @@ require("markdown_preview").setup({
   notify_on_refresh = false,            -- show notification on refresh
 
   mermaid_renderer = "js",              -- "js" (browser mermaid.js) or "rust" (mmdr CLI, ~400x faster)
+
+  scroll_sync = true,                   -- browser scrolls to heading as cursor moves
 })
 ```
 
@@ -188,7 +191,7 @@ Browser-side libraries are loaded from CDN (cached by your browser):
 - Invalid diagrams show the last good render + error message
 
 **Port conflict**
-- Stop with `<leader>mpS`, change `port` in config, restart with `<leader>mps`
+- Stop with `:MarkdownPreviewStop`, change `port` in config, restart with `:MarkdownPreview`
 
 ---
 

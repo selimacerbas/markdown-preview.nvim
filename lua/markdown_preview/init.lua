@@ -326,7 +326,7 @@ end
 --- Slugify a heading string — must match browser-side markdown-it-anchor slugify:
 ---   s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')
 local function slugify(s)
-	return s:match("^%s*(.-)%s*$"):lower():gsub("%s+", "-"):gsub("[^%w%-]", "")
+	return s:match("^%s*(.-)%s*$"):lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
 end
 
 --- Find the nearest heading above (or at) the cursor and return its slug.
@@ -334,8 +334,8 @@ local function find_heading_at_cursor(bufnr)
 	local row = vim.api.nvim_win_get_cursor(0)[1] -- 1-indexed
 	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, row, false)
 	for i = #lines, 1, -1 do
-		local text = lines[i]:match("^#{1,6}%s+(.+)")
-		if text then
+		local hashes, text = lines[i]:match("^(#+)%s+(.+)")
+		if hashes and #hashes <= 6 then
 			return slugify(text)
 		end
 	end
