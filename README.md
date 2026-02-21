@@ -7,6 +7,7 @@ Live **Markdown preview** for Neovim with first-class **Mermaid diagram** suppor
 - Renders your entire `.md` file in the browser — headings, tables, code blocks, everything
 - **Mermaid diagrams** render inline as interactive SVGs (click to expand, zoom, pan, export)
 - **Instant updates** via Server-Sent Events (no polling) with **scroll sync** — browser follows your cursor
+- **LaTeX math** — inline `$...$` and display `$$...$$` rendered via KaTeX
 - **Syntax highlighting** for code blocks (highlight.js)
 - Dark / Light theme toggle with colored heading accents
 - **Optional Rust-powered rendering** — use [`mermaid-rs-renderer`](https://github.com/mermaid-rs/mermaid-rs-renderer) for ~400x faster mermaid diagrams
@@ -83,6 +84,7 @@ The preview opens a polished browser app with:
 - **Dark / Light theme** toggle (sun/moon icon in header)
 - **Live connection indicator** — green dot when SSE is connected
 - **Per-diagram error handling** — if one mermaid block is invalid, only that block shows an error; the rest of the page renders fine
+- **LaTeX math rendering** — `$E = mc^2$` inline and `$$\int_0^\infty$$` display math via KaTeX, plus `\begin{equation}` environments
 - **Scroll sync** — browser follows your cursor position with line-level precision
 - **Iconify auto-detection** — icon packs like `logos:google-cloud` are loaded on demand
 
@@ -174,6 +176,7 @@ Rendered preview (scroll preserved, no flicker)
 
 Browser-side libraries are loaded from CDN (cached by your browser):
 - [markdown-it](https://github.com/markdown-it/markdown-it) — Markdown parser
+- [KaTeX](https://katex.org/) + [markdown-it-texmath](https://github.com/goessner/markdown-it-texmath) — LaTeX math rendering
 - [Mermaid](https://mermaid.js.org/) — diagram engine
 - [highlight.js](https://highlightjs.org/) — syntax highlighting
 - [morphdom](https://github.com/patrick-steele-idem/morphdom) — DOM diffing

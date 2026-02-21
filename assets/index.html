@@ -10,6 +10,10 @@
     <link id="hljs-theme" rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" />
 
+    <!-- KaTeX (LaTeX math rendering) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markdown-it-texmath@1.0.0/css/texmath.css">
+
     <style>
         /* ── CSS Variables ─────────────────────────────────────────────── */
         :root {
@@ -850,6 +854,8 @@
     <script src="https://cdn.jsdelivr.net/npm/markdown-it-emoji@3.0.0/dist/markdown-it-emoji.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markdown-it-footnote@4.0.0/dist/markdown-it-footnote.min.js"></script>
     <script src="https://unpkg.com/markdown-it-anchor@9.2.0/dist/markdownItAnchor.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it-texmath@1.0.0/texmath.js"></script>
 
     <script type="module">
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
@@ -990,6 +996,14 @@
                     ariaHidden: true,
                 }),
                 slugify: (s) => s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, ''),
+            });
+        }
+
+        // LaTeX math via KaTeX + texmath
+        if (window.texmath && window.katex) {
+            md.use(window.texmath, {
+                engine: window.katex,
+                delimiters: ['dollars', 'beg_end'],
             });
         }
 
