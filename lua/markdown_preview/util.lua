@@ -75,6 +75,8 @@ function M.open_in_browser(url)
 		cmd = { "open", url }
 	elseif vim.fn.has("unix") == 1 then
 		cmd = { "xdg-open", url }
+	elseif vim.fn.has("wsl") == 1 then
+		cmd = { "wslview", url }
 	elseif vim.fn.has("win32") == 1 then
 		cmd = { "cmd.exe", "/c", "start", url }
 	end
