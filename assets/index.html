@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark" data-bottom-padding="__BOTTOM_PADDING__" data-mermaid-elk="__MERMAID_ELK__" data-live-token="__LIVE_TOKEN__">
+<html lang="en" data-theme="__THEME__" data-bottom-padding="__BOTTOM_PADDING__" data-mermaid-elk="__MERMAID_ELK__" data-live-token="__LIVE_TOKEN__">
 
 <head>
     <meta charset="utf-8" />
@@ -879,7 +879,7 @@
 
         // ── State ─────────────────────────────────────────────────────
         let lastContent = null;
-        let currentTheme = 'dark';
+        let currentTheme = document.documentElement.dataset.theme || 'dark';
         let mermaidIdCounter = 0;
         let sseConnected = false;
         const loadedPacks = new Set();
@@ -1453,7 +1453,7 @@
                     const elkLayouts = await import('https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.1/dist/mermaid-layout-elk.esm.min.mjs');
                     mermaid.registerLayoutLoaders(elkLayouts.default || elkLayouts);
                 }
-                applyTheme('dark');
+                applyTheme(currentTheme);
                 await sync(true);
             } catch (e) {
                 console.error('[markdown-preview] boot error:', e);

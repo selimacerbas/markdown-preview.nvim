@@ -42,6 +42,9 @@ M.config = {
 
 	scroll_sync = true, -- sync browser scroll to cursor position
 
+	-- "dark" or "light"; determines the initial theme of the preview page
+	theme = "dark",
+
 	-- Fraction (0–1): vertical position of the final line when scrolled to end.
 	-- 0.5 = middle of viewport (default), 1.0 = bottom edge (no extra space)
 	bottom_padding = 0.5,
@@ -105,6 +108,7 @@ local function write_index(dir)
 	content = content:gsub("__BOTTOM_PADDING__", function() return tostring(M.config.bottom_padding) end)
 	content = content:gsub("__MERMAID_ELK__", function() return M.config.mermaid_elk and "true" or "false" end)
 	content = content:gsub("__LIVE_TOKEN__", function() return M._token or "" end)
+	content = content:gsub("__THEME__", function() return M.config.theme end)
 	util.write_text(dst, content)
 	return dst
 end
