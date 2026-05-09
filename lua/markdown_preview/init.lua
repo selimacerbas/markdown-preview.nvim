@@ -48,6 +48,13 @@ M.config = {
 	-- Fraction (0–1): vertical position of the final line when scrolled to end.
 	-- 0.5 = middle of viewport (default), 1.0 = bottom edge (no extra space)
 	bottom_padding = 0.5,
+
+	hooks = {
+		-- fun(url: string)|nil — called after preview starts; receives the preview URL
+		on_start = nil,
+		-- fun()|nil — called after preview stops
+		on_stop = nil,
+	},
 }
 
 function M.setup(opts)
@@ -459,6 +466,9 @@ function M.start()
 			write_content(dir, text)
 			M._last_text_by_buf[bufnr] = text
 			set_autocmds_for_buffer(bufnr)
+			if type(M.config.hooks.on_start) == "function" then
+				M.config.hooks.on_start(("http://127.0.0.1:%d/"):format(lock_data.port))
+			end
 			return
 		end
 		-- Stale lock or no lock, we become primary
@@ -517,6 +527,10 @@ function M.start()
 			require("markdown_preview.lock").write(inst.port, dir, M._token)
 		end
 
+		if type(M.config.hooks.on_start) == "function" then
+			M.config.hooks.on_start(("http://127.0.0.1:%d/"):format(inst.port))
+		end
+
 		if M.config.open_browser then
 			vim.defer_fn(function()
 				util.open_in_browser(browser_url(inst.port), M.config.browser)
@@ -527,6 +541,10 @@ function M.start()
 		local index_path = vim.fs.joinpath(dir, M.config.index_name)
 		pcall(ls_server.update_target, M._server_instance, dir, index_path)
 		pcall(ls_server.reload, M._server_instance, M.config.content_name)
+
+		if type(M.config.hooks.on_start) == "function" then
+			M.config.hooks.on_start(("http://127.0.0.1:%d/"):format(M._server_instance.port))
+		end
 
 		-- No browser tab connected (user closed it)? Re-open.
 		if M.config.open_browser and ls_server.connected_client_count(M._server_instance) == 0 then
@@ -562,6 +580,10 @@ function M.stop()
 	M._is_primary = nil
 	M._takeover_port = nil
 	M._token = nil
+
+	if type(M.config.hooks.on_stop) == "function" then
+		M.config.hooks.on_stop()
+	end
 end
 
 return M

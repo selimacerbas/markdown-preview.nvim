@@ -128,8 +128,33 @@ require("markdown_preview").setup({
   -- Fraction (0–1): vertical position of the final line when scrolled to end.
   -- 0.5 = middle of viewport (default), 1.0 = bottom edge (no extra space)
   bottom_padding = 0.5,
+
+  hooks = {
+    on_start = nil,   -- fun(url: string)|nil — called after preview starts
+    on_stop  = nil,   -- fun()|nil — called after preview stops
+  },
 })
 ```
+
+### Hooks
+
+Lifecycle callbacks that run when the preview starts or stops. Use them for notifications, logging, or triggering other actions.
+
+```lua
+require("markdown_preview").setup({
+  hooks = {
+    on_start = function(url)
+      vim.notify("Preview started: " .. url, vim.log.levels.INFO)
+    end,
+    on_stop = function()
+      vim.notify("Preview stopped", vim.log.levels.INFO)
+    end,
+  },
+})
+```
+
+- **`on_start(url)`** — called after the server is ready, before the browser opens. Receives the preview URL as a string.
+- **`on_stop()`** — called after the server is stopped and all cleanup is done.
 
 ### Instance modes
 
