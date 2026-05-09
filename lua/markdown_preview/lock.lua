@@ -37,10 +37,10 @@ function M.remove()
 	pcall(uv.fs_unlink, lock_path())
 end
 
-function M.is_server_alive(port)
+function M.is_server_alive(host, port)
 	local alive = nil
 	local tcp = uv.new_tcp()
-	tcp:connect("127.0.0.1", port, function(err)
+	tcp:connect(host, port, function(err)
 		alive = not err
 		pcall(function() tcp:shutdown() end)
 		pcall(function() tcp:close() end)
