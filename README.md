@@ -225,6 +225,14 @@ Browser-side libraries are loaded from CDN (cached by your browser):
 
 ---
 
+## Running tests
+
+```sh
+nvim --headless -c "set rtp+=." -c "luafile tests/host_config_test.lua" -c "qa!"
+```
+
+---
+
 ## Project structure
 
 ```
