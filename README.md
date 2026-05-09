@@ -1,5 +1,7 @@
 # markdown-preview.nvim
 
+![Tests](https://github.com/crankycoder/markdown-preview.nvim/actions/workflows/test.yml/badge.svg)
+
 > **Note:** This repository was previously known as `mermaid-playground.nvim`. It has been renamed and rewritten to support full Markdown preview alongside first-class Mermaid diagram support.
 
 Live **Markdown preview** for Neovim with first-class **Mermaid diagram** support.
@@ -95,7 +97,7 @@ The preview opens a polished browser app with:
 
 ```lua
 require("markdown_preview").setup({
-  instance_mode = "takeover",           -- "takeover" or "multi" (see below)
+  host = "127.0.0.1",          -- bind address ("0.0.0.0" to allow external connections)
   port = 0,                             -- 0 = auto (8421 for takeover, OS-assigned for multi)
   open_browser = true,                  -- auto-open browser on start
 
@@ -127,6 +129,21 @@ require("markdown_preview").setup({
   bottom_padding = 0.5,
 })
 ```
+
+### Network
+
+By default the server listens on `127.0.0.1` (localhost only). Set `host` to `"0.0.0.0"` to allow connections from other machines on your network — useful for previewing on a phone or second device.
+
+```lua
+require("markdown_preview").setup({
+  host = "0.0.0.0",  -- accessible from any network interface
+})
+```
+
+The `port` option controls which port the server binds to:
+
+- `0` (default) — automatic: port `8421` in takeover mode, OS-assigned in multi mode
+- Any specific number — binds to that port (errors if already in use)
 
 ### Instance modes
 

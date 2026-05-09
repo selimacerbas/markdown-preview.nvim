@@ -431,7 +431,7 @@ function M.start()
 	if M.config.instance_mode == "takeover" and not M._server_instance then
 		local lock = require("markdown_preview.lock")
 		local lock_data = lock.read()
-		if lock_data and lock.is_server_alive(M.config.host, lock_data.port) then
+		if lock_data and lock.is_server_alive(M.config.host, lock_data.port, lock_data.pid) then
 			-- Secondary mode: server already running in another Neovim instance
 			M._is_primary = false
 			M._takeover_port = lock_data.port

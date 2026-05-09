@@ -37,7 +37,22 @@ function M.remove()
 	pcall(uv.fs_unlink, lock_path())
 end
 
-function M.is_server_alive(host, port)
+--- Check whether a process is still running.
+--- Uses signal 0 (no-op) which succeeds only if the process exists.
+--- Returns false for PIDs that have exited (zombies reaped) or don't exist.
+---@param pid integer
+---@return boolean
+function M.is_pid_alive(pid)
+	local ok = uv.kill(pid, 0)
+	return ok ~= nil
+end
+
+function M.is_server_alive(host, port, expected_pid)
+	-- If the PID that wrote the lock is dead, don't trust the port — another
+	-- process may have reused it. Treat the lock as stale.
+	if expected_pid and not M.is_pid_alive(expected_pid) then
+		return false
+	end
 	local alive = nil
 	local tcp = uv.new_tcp()
 	tcp:connect(host, port, function(err)

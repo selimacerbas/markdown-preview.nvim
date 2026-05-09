@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nvim_version: ["stable", "nightly"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim_version }}
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          found=0
+          for f in tests/*_test.lua; do
+            [ -f "$f" ] || continue
+            found=1
+            echo "::group::$(basename "$f")"
+            nvim --headless -c "set rtp+=." -c "luafile $f" -c "qa!" 2>&1
+            echo "::endgroup::"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "No test files found in tests/"
+            exit 1
+          fi
