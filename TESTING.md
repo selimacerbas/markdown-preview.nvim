@@ -3,14 +3,14 @@
 ## Running Tests
 
 ```bash
-nvim --headless -c "set rtp+=." -c "luafile tests/host_config_test.lua" -c "qa!"
+for f in tests/*_test.lua; do nvim --headless -c "set rtp+=." -c "luafile $f" -c "qa!"; done
 ```
 
 ## Test Structure
 
-- `tests/host_config_test.lua` - Tests for host configuration feature
+- `tests/host_config_test.lua` - Config defaults, overrides, module signatures
+- `tests/lock_test.lua` - Lock file semantics (PID liveness, write/read/remove, stale lock detection)
 
 ## Notes
 
-- Tests mock the `live-server.nvim` dependency since it may not be available in all environments
-- The test harness is minimal and focuses on interface/signature verification
+- Tests mock `live-server.nvim` to isolate plugin logic from server lifecycle
