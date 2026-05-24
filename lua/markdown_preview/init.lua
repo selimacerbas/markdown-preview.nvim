@@ -528,7 +528,7 @@ function M.start()
 		end
 
 		if type(M.config.hooks.on_start) == "function" then
-			M.config.hooks.on_start(("http://127.0.0.1:%d/"):format(inst.port))
+			M.config.hooks.on_start(browser_url(inst.port))
 		end
 
 		if M.config.open_browser then
@@ -543,7 +543,7 @@ function M.start()
 		pcall(ls_server.reload, M._server_instance, M.config.content_name)
 
 		if type(M.config.hooks.on_start) == "function" then
-			M.config.hooks.on_start(("http://127.0.0.1:%d/"):format(M._server_instance.port))
+			M.config.hooks.on_start(browser_url(M._server_instance.port))
 		end
 
 		-- No browser tab connected (user closed it)? Re-open.
