@@ -40,11 +40,31 @@ end
 --- Check whether a process is still running.
 --- Uses signal 0 (no-op) which succeeds only if the process exists.
 --- Returns false for PIDs that have exited (zombies reaped) or don't exist.
+--- Note: uv.kill may not work reliably on Windows, so we fall back to port checking.
 ---@param pid integer
 ---@return boolean
 function M.is_pid_alive(pid)
+	-- On Unix systems, use signal 0 to check if process exists
 	local ok = uv.kill(pid, 0)
-	return ok ~= nil
+	if ok ~= nil then
+		return true
+	end
+	
+	-- On Windows or if uv.kill failed, fall back to port checking
+	-- This is less reliable but better than nothing
+	local tcp = uv.new_tcp()
+	local alive = false
+	tcp:connect("127.0.0.1", 8421, function(err)
+		alive = not err
+		pcall(function() tcp:shutdown() end)
+		pcall(function() tcp:close() end)
+	end)
+	vim.wait(100, function() return alive ~= nil end, 10)
+	if alive == nil then
+		pcall(function() tcp:close() end)
+		alive = false
+	end
+	return alive
 end
 
 function M.is_server_alive(host, port, expected_pid)

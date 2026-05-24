@@ -134,6 +134,8 @@ require("markdown_preview").setup({
 
 By default the server listens on `127.0.0.1` (localhost only). Set `host` to `"0.0.0.0"` to allow connections from other machines on your network — useful for previewing on a phone or second device.
 
+**⚠️ Warning:** Using `host = "0.0.0.0"` exposes your preview to your local network. Only use this in trusted networks and avoid opening sensitive content to public access.
+
 ```lua
 require("markdown_preview").setup({
   host = "0.0.0.0",  -- accessible from any network interface
