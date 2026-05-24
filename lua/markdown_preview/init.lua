@@ -467,7 +467,7 @@ function M.start()
 			M._last_text_by_buf[bufnr] = text
 			set_autocmds_for_buffer(bufnr)
 			if type(M.config.hooks.on_start) == "function" then
-				M.config.hooks.on_start(("http://127.0.0.1:%d/"):format(lock_data.port))
+				M.config.hooks.on_start(browser_url(lock_data.port))
 			end
 			return
 		end
