@@ -30,7 +30,7 @@ Live **Markdown preview** for Neovim with first-class **Mermaid diagram** suppor
       instance_mode = "takeover",  -- "takeover" (one tab) or "multi" (tab per instance)
       port = 0,                    -- 0 = auto (8421 for takeover, OS-assigned for multi)
       open_browser = true,
-      theme = "dark",              -- "dark" or "light"; initial preview theme
+      default_theme = "dark",      -- "dark" or "light"; initial preview theme
       debounce_ms = 300,
     })
   end,
@@ -121,7 +121,7 @@ require("markdown_preview").setup({
 
   mermaid_renderer = "js",              -- "js" (browser mermaid.js) or "rust" (mmdr CLI, ~400x faster)
 
-  theme = "dark",                       -- "dark" or "light"; initial preview theme (toggleable in browser)
+  default_theme = "dark",               -- "dark" or "light"; initial preview theme (toggleable in browser)
 
   scroll_sync = true,                   -- browser follows cursor position
 
