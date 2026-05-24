@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark" data-bottom-padding="__BOTTOM_PADDING__" data-mermaid-elk="__MERMAID_ELK__">
+<html lang="en" data-theme="dark" data-bottom-padding="__BOTTOM_PADDING__" data-mermaid-elk="__MERMAID_ELK__" data-live-token="__LIVE_TOKEN__">
 
 <head>
     <meta charset="utf-8" />
@@ -884,6 +884,28 @@
         let sseConnected = false;
         const loadedPacks = new Set();
 
+        // Live-reload auth token. Either substituted into the document by
+        // markdown-preview.nvim at file-write time, or passed via ?t=<token>
+        // in the URL on first load (then stashed in sessionStorage so it
+        // survives refreshes). Empty string when the server has no auth.
+        const LIVE_TOKEN = (() => {
+            const fromAttr = document.documentElement.dataset.liveToken || '';
+            if (fromAttr && fromAttr !== '__LIVE_TOKEN__') {
+                try { sessionStorage.setItem('mdp-token', fromAttr); } catch (_) {}
+                return fromAttr;
+            }
+            const fromUrl = new URLSearchParams(location.search).get('t');
+            if (fromUrl) {
+                try { sessionStorage.setItem('mdp-token', fromUrl); } catch (_) {}
+                return fromUrl;
+            }
+            try { return sessionStorage.getItem('mdp-token') || ''; } catch (_) { return ''; }
+        })();
+        const withToken = (url) => {
+            if (!LIVE_TOKEN) return url;
+            return url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(LIVE_TOKEN);
+        };
+
         // Scroll sync state
         let scrollSyncPaused = false;
         let scrollSyncPauseTimer = null;
@@ -1131,7 +1153,7 @@
         // ── Content sync ──────────────────────────────────────────────
         async function fetchContent() {
             try {
-                const resp = await fetch('content.md?ts=' + Date.now(), { cache: 'no-store' });
+                const resp = await fetch(withToken('content.md?ts=' + Date.now()), { cache: 'no-store' });
                 if (!resp.ok) {
                     console.warn('[markdown-preview] content.md fetch failed:', resp.status);
                     return null;
@@ -1258,7 +1280,7 @@
 
         // ── SSE (Server-Sent Events from live-server.nvim) ────────────
         function connectSSE() {
-            const evtSource = new EventSource('/__live/events');
+            const evtSource = new EventSource(withToken('/__live/events'));
             evtSource.addEventListener('reload', async () => {
                 await sync(false);
             });

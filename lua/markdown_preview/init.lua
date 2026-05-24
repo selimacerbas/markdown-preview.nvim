@@ -2,6 +2,7 @@
 local ts = require("markdown_preview.ts")
 local util = require("markdown_preview.util")
 local ls_server = require("live_server.server")
+local ls_util = require("live_server.util")
 
 local M = {}
 
@@ -63,6 +64,7 @@ M._mmdr_available = nil -- nil = unchecked, true/false after probe
 M._last_scroll_line = nil
 M._is_primary = nil      -- true/false/nil (takeover mode)
 M._takeover_port = nil   -- port of primary server (secondary uses for HTTP events)
+M._token = nil           -- live-server auth token (primary owns; secondaries read from lockfile)
 
 local function effective_port()
 	if M.config.port ~= 0 then return M.config.port end
@@ -98,8 +100,11 @@ local function write_index(dir)
 		error("Could not locate assets/index.html in runtimepath. Make sure the plugin ships it.")
 	end
 	local content = util.read_text(src)
-	content = content:gsub("__BOTTOM_PADDING__", tostring(M.config.bottom_padding))
-	content = content:gsub("__MERMAID_ELK__", M.config.mermaid_elk and "true" or "false")
+	-- gsub with function replacement: avoids the "%n is a capture reference"
+	-- escape problem if any substituted value contains '%'.
+	content = content:gsub("__BOTTOM_PADDING__", function() return tostring(M.config.bottom_padding) end)
+	content = content:gsub("__MERMAID_ELK__", function() return M.config.mermaid_elk and "true" or "false" end)
+	content = content:gsub("__LIVE_TOKEN__", function() return M._token or "" end)
 	util.write_text(dst, content)
 	return dst
 end
@@ -364,7 +369,7 @@ local function send_scroll_sync(bufnr)
 	if M._server_instance then
 		pcall(ls_server.send_event, M._server_instance, "scroll", payload)
 	elseif M._takeover_port then
-		require("markdown_preview.remote").send_event(M._takeover_port, "scroll", payload)
+		require("markdown_preview.remote").send_event(M._takeover_port, "scroll", payload, M._token)
 	end
 end
 
@@ -405,6 +410,17 @@ end
 -- Public API
 ---------------------------------------------------------------------------
 
+-- Build the URL the browser opens to. Embeds the auth token when one exists
+-- so the first request includes it (the page then stashes it in
+-- sessionStorage for refreshes).
+local function browser_url(port)
+	local base = ("http://127.0.0.1:%d/"):format(port)
+	if M._token and M._token ~= "" then
+		return base .. "?t=" .. M._token
+	end
+	return base
+end
+
 function M.start()
 	local bufnr = vim.api.nvim_get_current_buf()
 	M._active_bufnr = bufnr
@@ -425,25 +441,42 @@ function M.start()
 	util.mkdirp(dir)
 	M._workspace_dir = dir
 
+	-- Decide role + token BEFORE writing index.html. The index bakes the
+	-- token in via the __LIVE_TOKEN__ placeholder, so we need it ready.
+	if M.config.instance_mode == "takeover" and not M._server_instance then
+		local lock = require("markdown_preview.lock")
+		local lock_data = lock.read()
+		if lock_data and lock.is_server_alive(lock_data.port) then
+			-- Secondary: server is already running in another Neovim
+			-- instance. Adopt its token so our scroll-sync RPC works.
+			M._is_primary = false
+			M._takeover_port = lock_data.port
+			M._token = lock_data.token
+			write_content(dir, text)
+			M._last_text_by_buf[bufnr] = text
+			set_autocmds_for_buffer(bufnr)
+			return
+		end
+		-- Stale lock or no lock, we become primary
+		lock.remove()
+	end
+
+	-- Primary path (takeover) or single-instance (multi). Generate a token
+	-- once per server lifetime and reuse it across retargets.
+	if not M._token or M._token == "" then
+		M._token = ls_util.random_token(16)
+	end
+
 	write_index_if_needed(dir)
 	write_content(dir, text)
 	M._last_text_by_buf[bufnr] = text
 
 	set_autocmds_for_buffer(bufnr)
 
-	-- In takeover mode, check if another instance already owns the server
-	if M.config.instance_mode == "takeover" and not M._server_instance then
-		local lock = require("markdown_preview.lock")
-		local lock_data = lock.read()
-		if lock_data and lock.is_server_alive(lock_data.port) then
-			-- Secondary mode: server already running in another Neovim instance
-			M._is_primary = false
-			M._takeover_port = lock_data.port
-			return
-		end
-		-- Stale lock or no lock — we become primary
-		lock.remove()
-	end
+	-- Pattern matching the workspace-served content file. Used by live-server
+	-- to require ?t=<token> on requests for it. Escape any '.' in the
+	-- configured content_name so it's a literal match.
+	local content_path_pattern = "^/" .. M.config.content_name:gsub("%.", "%%.") .. "$"
 
 	-- Start live-server if not already running
 	if not M._server_instance then
@@ -461,6 +494,8 @@ function M.start()
 				debounce = 100,
 			},
 			features = { dirlist = { enabled = false } },
+			token = M._token,
+			protected_paths = { content_path_pattern },
 		})
 		if not ok then
 			vim.notify(
@@ -475,16 +510,16 @@ function M.start()
 
 		-- Write lock file in takeover mode
 		if M.config.instance_mode == "takeover" then
-			require("markdown_preview.lock").write(inst.port, dir)
+			require("markdown_preview.lock").write(inst.port, dir, M._token)
 		end
 
 		if M.config.open_browser then
 			vim.defer_fn(function()
-				util.open_in_browser(("http://127.0.0.1:%d/"):format(inst.port), M.config.browser)
+				util.open_in_browser(browser_url(inst.port), M.config.browser)
 			end, 200)
 		end
 	else
-		-- Server already running — retarget to this buffer's workspace
+		-- Server already running, retarget to this buffer's workspace
 		local index_path = vim.fs.joinpath(dir, M.config.index_name)
 		pcall(ls_server.update_target, M._server_instance, dir, index_path)
 		pcall(ls_server.reload, M._server_instance, M.config.content_name)
@@ -492,7 +527,7 @@ function M.start()
 		-- No browser tab connected (user closed it)? Re-open.
 		if M.config.open_browser and ls_server.connected_client_count(M._server_instance) == 0 then
 			vim.defer_fn(function()
-				util.open_in_browser(("http://127.0.0.1:%d/"):format(M._server_instance.port), M.config.browser)
+				util.open_in_browser(browser_url(M._server_instance.port), M.config.browser)
 			end, 200)
 		end
 	end
@@ -522,6 +557,7 @@ function M.stop()
 	M._last_scroll_line = nil
 	M._is_primary = nil
 	M._takeover_port = nil
+	M._token = nil
 end
 
 return M
