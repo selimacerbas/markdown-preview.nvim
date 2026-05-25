@@ -102,7 +102,7 @@ local function write_index(dir)
     local css_src = vim.fn.expand(M.config.custom_css)
     if vim.fn.filereadable(css_src) == 1 then
       local css = util.read_text(css_src)
-      content = content:gsub("</head>", "<style>\n" .. css .. "\n</style>\n</head>")
+      content = content:gsub("</head>", function() return  "<style>\n" .. css .. "\n</style>\n</head>" end)
     else
       vim.notify("Markdown Preview: custom_css not found: " .. css_src, vim.log.levels.WARN)
     end
