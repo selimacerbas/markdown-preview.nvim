@@ -21,14 +21,22 @@ function M.read()
 	return tbl
 end
 
-function M.write(port, workspace)
+function M.write(port, workspace, token)
 	local path = lock_path()
 	local dir = path:match("^(.+)/[^/]+$")
 	if dir and vim.fn.isdirectory(dir) == 0 then
 		vim.fn.mkdir(dir, "p")
 	end
-	local json = vim.json.encode({ port = port, workspace = workspace, pid = vim.fn.getpid() })
-	local fd = assert(uv.fs_open(path, "w", 420))
+	local json = vim.json.encode({
+		port = port,
+		workspace = workspace,
+		pid = vim.fn.getpid(),
+		token = token, -- nil OK; secondary instances need this to hit /__live/inject
+	})
+	-- Mode 0600 (decimal 384) so the token isn't world-readable on multi-user
+	-- systems. Use fs_open + immediate truncate so older lockfiles with looser
+	-- modes get replaced cleanly.
+	local fd = assert(uv.fs_open(path, "w", 384))
 	assert(uv.fs_write(fd, json, 0))
 	assert(uv.fs_close(fd))
 end
