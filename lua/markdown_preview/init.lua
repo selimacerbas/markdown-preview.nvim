@@ -21,7 +21,10 @@ M.config = {
 
 	content_name = "content.md",
 	index_name = "index.html",
-  custom_css = "",
+
+	-- Path to a CSS file injected after the bundled styles, so user rules win
+	-- the cascade without !important. Supports ~ and $VARS. "" = disabled.
+	custom_css = "",
 
 	-- nil = per-buffer workspace (recommended); set a path to override
 	workspace_dir = nil,
@@ -123,16 +126,18 @@ local function write_index(dir)
 	end)
 	content = content:gsub("__THEME__", function() return M.config.default_theme end)
 
-  -- Inline custom CSS if configured
-  if M.config.custom_css and M.config.custom_css ~= "" then
-    local css_src = vim.fn.expand(M.config.custom_css)
-    if vim.fn.filereadable(css_src) == 1 then
-      local css = util.read_text(css_src)
-      content = content:gsub("</head>", function() return  "<style>\n" .. css .. "\n</style>\n</head>" end)
-    else
-      vim.notify("Markdown Preview: custom_css not found: " .. css_src, vim.log.levels.WARN)
-    end
-  end
+	-- Inline custom CSS after the bundled styles so user rules win the cascade.
+	if M.config.custom_css and M.config.custom_css ~= "" then
+		local css_src = vim.fn.expand(M.config.custom_css)
+		local ok, css = pcall(util.read_text, css_src)
+		if ok and css then
+			content = content:gsub("</head>", function()
+				return "<style>\n" .. css .. "\n</style>\n</head>"
+			end, 1)
+		else
+			vim.notify("Markdown Preview: custom_css not readable: " .. css_src, vim.log.levels.WARN)
+		end
+	end
 
 	util.write_text(dst, content)
 	return dst
