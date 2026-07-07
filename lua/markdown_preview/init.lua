@@ -116,7 +116,11 @@ local function write_index(dir)
 	-- escape problem if any substituted value contains '%'.
 	content = content:gsub("__BOTTOM_PADDING__", function() return tostring(M.config.bottom_padding) end)
 	content = content:gsub("__MERMAID_ELK__", function() return M.config.mermaid_elk and "true" or "false" end)
-	content = content:gsub("__LIVE_TOKEN__", function() return M._token or "" end)
+	-- Anchor to the attribute: index.html also contains the bare placeholder
+	-- as a JS sentinel, and substituting that too breaks auth (issue #31).
+	content = content:gsub('data%-live%-token="__LIVE_TOKEN__"', function()
+		return 'data-live-token="' .. (M._token or "") .. '"'
+	end)
 	content = content:gsub("__THEME__", function() return M.config.default_theme end)
 
   -- Inline custom CSS if configured
@@ -141,6 +145,14 @@ local function write_index_if_needed(dir)
 	local dst = vim.fs.joinpath(dir, M.config.index_name)
 	if not util.file_exists(dst) then
 		return write_index(dir)
+	end
+	-- A cached index baked with a previous session's token would 401 against
+	-- the current server, so rewrite whenever the baked token went stale.
+	if M._token and M._token ~= "" then
+		local ok, existing = pcall(util.read_text, dst)
+		if not ok or not existing:find(M._token, 1, true) then
+			return write_index(dir)
+		end
 	end
 	return dst
 end
@@ -515,7 +527,9 @@ function M.start()
 			root = dir,
 			default_index = index_path,
 			headers = { ["Cache-Control"] = "no-cache" },
-			cors = true,
+			-- No cors: the preview page is same-origin and remote.lua talks raw
+			-- TCP. A wildcard ACAO would let any website in the user's browser
+			-- read the token out of the (unauthenticated) index page.
 			live = {
 				enabled = true,
 				inject_script = false,

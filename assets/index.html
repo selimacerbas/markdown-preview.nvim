@@ -766,6 +766,11 @@
                 padding: 1rem 1rem 3rem
             }
         }
+        @media print {
+            .mermaid-block .mermaid-svg-wrap svg {
+                max-height: 95vh !important;
+            }
+        }
     </style>
 </head>
 
@@ -890,7 +895,10 @@
         // survives refreshes). Empty string when the server has no auth.
         const LIVE_TOKEN = (() => {
             const fromAttr = document.documentElement.dataset.liveToken || '';
-            if (fromAttr && fromAttr !== '__LIVE_TOKEN__') {
+            // Split literal: a whole '__LIVE_TOKEN__' here would itself be
+            // rewritten by write_index's substitution, turning this guard
+            // into token !== token and breaking auth on tab reuse (issue #31).
+            if (fromAttr && fromAttr !== '__LIVE' + '_TOKEN__') {
                 try { sessionStorage.setItem('mdp-token', fromAttr); } catch (_) {}
                 return fromAttr;
             }
@@ -999,7 +1007,7 @@
         md.use(markdownItGithubAlerts);
         if (window.markdownitEmoji) md.use(window.markdownitEmoji);
         if (window.markdownitFootnote) md.use(window.markdownitFootnote);
-        if (window.markdownItTaskLists) md.use(window.markdownItTaskLists, { enabled: false });
+        if (window.markdownitTaskLists) md.use(window.markdownitTaskLists, { enabled: false });
         if (window.markdownItAnchor) {
             md.use(window.markdownItAnchor, {
                 permalink: false,
@@ -1156,6 +1164,11 @@
                 const resp = await fetch(withToken('content.md?ts=' + Date.now()), { cache: 'no-store' });
                 if (!resp.ok) {
                     console.warn('[markdown-preview] content.md fetch failed:', resp.status);
+                    if (resp.status === 401) {
+                        // Stale token (server restarted since this tab loaded).
+                        // Evict it so the next load bootstraps fresh.
+                        try { sessionStorage.removeItem('mdp-token'); } catch (_) {}
+                    }
                     return null;
                 }
                 return (await resp.text()).replace(/\r\n?/g, '\n');
