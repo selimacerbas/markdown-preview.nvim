@@ -140,6 +140,9 @@ require("markdown_preview").setup({
     on_start = nil,   -- fun(url: string)|nil — called after preview starts
     on_stop  = nil,   -- fun()|nil — called after preview stops
   },
+
+	-- Table of filetypes to consider as markdown, e.g. for custom literate markdown files
+	ft = { "markdown" },
 })
 ```
 
