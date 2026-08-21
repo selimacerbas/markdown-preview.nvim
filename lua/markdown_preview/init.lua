@@ -72,7 +72,7 @@ M.config = {
 	},
 
 	-- Table of filetypes to consider as markdown, e.g. for custom literate markdown files
-	ft = { "markdown" }
+	ft = { "markdown" },
 }
 
 function M.setup(opts)
