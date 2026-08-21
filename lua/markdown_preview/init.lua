@@ -70,6 +70,9 @@ M.config = {
 		-- fun()|nil — called after preview stops
 		on_stop = nil,
 	},
+
+	-- Table of filetypes to consider as markdown, e.g. for custom literate markdown files
+	ft = { "markdown" }
 }
 
 function M.setup(opts)
@@ -341,7 +344,11 @@ end
 local function get_content(bufnr)
 	local text
 	local ft = vim.bo[bufnr].filetype
-	if ft == "markdown" then
+	local ft_bool_table = {}
+	for _, value in pairs(M.config.ft) do
+		ft_bool_table[value] = true
+	end
+	if ft_bool_table[ft] then
 		local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 		text = table.concat(lines, "\n")
 	elseif vim.api.nvim_buf_get_name(bufnr):match("%.mmd$")
