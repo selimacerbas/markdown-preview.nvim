@@ -18,10 +18,11 @@
 # line fails the run too.
 #
 # Each suite is passed by its absolute logical name: $PWD keeps the name of a
-# link the checkout was reached through, where Neovim would make a relative
-# name absolute against the physical directory, and the helper puts the
-# checkout on the runtimepath by the name it was loaded through (a plain link
-# to a directory whose real name carries a comma loads only by the link).
+# link the shell cd'ed into (make -C <link> and a recipe's $PWD read the
+# physical name, so run from inside the link), where Neovim would make a
+# relative name absolute against the physical directory, and the helper puts
+# the checkout on the runtimepath by the name it was loaded through (a plain
+# link to a directory whose real name carries a comma loads only by the link).
 set -u
 cd "$(dirname "$0")/.." || exit 1
 run=$(mktemp -d) || exit 1

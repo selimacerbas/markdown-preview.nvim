@@ -28,7 +28,10 @@ local ok, eq = H.ok, H.eq
 -- by the name this suite loaded it through, not by H.root: H.rtp puts the
 -- checkout on the runtimepath by that name, and through a plain-named link
 -- to a directory whose real name carries a comma the canonical one splits.
-local helpers_path = vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua")
+-- Made absolute the way the helper makes its own name absolute (:p keeps an
+-- absolute link name as it is), since a child runs with its own cwd.
+local helpers_path =
+	vim.fn.fnamemodify(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"), ":p")
 local CHILD_TIMEOUT_MS = 30000
 local function child(helpers, body, override, env, cwd)
 	local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
