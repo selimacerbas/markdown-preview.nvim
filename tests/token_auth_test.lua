@@ -35,20 +35,30 @@ local ok, eq, http_get = H.ok, H.eq, H.http_get
 -- H.isolate raises when stdpath does not follow the variables; what it cannot
 -- see is where the plugin writes.
 H.section("Section 0: isolation")
--- joinpath writes / where stdpath keeps Windows's backslashes, so the
--- workspace's ancestors are compared through the harness's path contract.
+-- joinpath writes / where stdpath keeps Windows's backslashes, so both names
+-- are compared canonical: a .. in the workspace resolves through the
+-- filesystem before the prefix test (a lexical walk of its parents passed
+-- <cache>/../escape, measured), the separator keeps a sibling such as
+-- <cache>x out, and case folds where the filesystem folds, as H.same_path's
+-- does.
 local workspace = mp._workspace_dir or ""
 local function sits_under(path, dir)
-	for parent in vim.fs.parents(path) do
-		if H.same_path(parent, dir) then
-			return true
-		end
+	local p, d = H.canon(path), H.canon(dir) .. "/"
+	if H.fs_folds_case then
+		p, d = p:lower(), d:lower()
 	end
-	return false
+	return vim.startswith(p, d)
 end
 ok(
 	workspace ~= "" and sits_under(workspace, vim.fn.stdpath("cache")),
 	"the plugin's workspace sits under the isolated cache: " .. workspace
+)
+ok(
+	not sits_under(
+		vim.fs.joinpath(vim.fn.stdpath("cache"), "..", "escape", "markdown-preview"),
+		vim.fn.stdpath("cache")
+	),
+	"a workspace that climbs out of the cache with .. does not sit under it"
 )
 local written = {}
 for _, cache in ipairs(startup_caches) do

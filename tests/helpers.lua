@@ -20,6 +20,21 @@ local real_exit = os.exit
 
 local is_win = vim.fn.has("win32") == 1
 
+-- Whether the filesystem folds case is the volume's property, not the
+-- platform's: NTFS and macOS's default APFS fold, the usual Linux
+-- filesystems do not. It is measured once, where every fixture a suite
+-- builds lives: a fresh directory under Neovim's tempdir, a name made in one
+-- case and looked up in the other. It stays nil when Neovim has no tempdir.
+do
+	local dir = vim.fn.tempname()
+	if dir ~= "" and uv.fs_mkdir(dir, 448) then
+		if uv.fs_mkdir(dir .. "/probe-case", 448) then
+			H.fs_folds_case = uv.fs_stat(dir .. "/PROBE-CASE") ~= nil
+		end
+		vim.fn.delete(dir, "rf")
+	end
+end
+
 -- A nil or empty name raises at the suite's line (level 3: past this check
 -- and the helper that called it), where :p would read it as a file named
 -- v:null or as the working directory and a comparison would pass by accident.
@@ -37,16 +52,20 @@ end
 -- a $ kept literal. realpath needs the path to exist, so a name not yet
 -- created resolves through its deepest existing ancestor: it reads the same
 -- before and after it is made (a dangling link reads as a missing name, so
--- making its target does move a path through it), and a second pass
--- changes nothing. The walk runs on the :p form before any fold by name, so
--- a .. after a symlinked directory resolves through the filesystem as the
--- kernel reads it, also while a later name is missing; a .. or . left in the
--- missing tail folds by name, and the result is resolved once more in case
--- the fold landed on a link. The one shape that still moves once made is a
--- missing name followed by a link and a .. (missing/../link/../x): the fold
--- by name crosses the link before it exists to the filesystem walk. No
--- suite builds one; resolving the tail one component at a time is the fix
--- (the plan's F-16).
+-- making its target does move a path through it; where the filesystem folds
+-- case, a missing name moves to the case it is made in, which H.same_path
+-- folds away), and a second pass changes nothing. Only a name that is not
+-- there (ENOENT) or sits under a file (ENOTDIR) walks up: any other realpath
+-- error (a symlink loop, a refused search) names a file that exists and
+-- cannot be resolved, so it raises rather than compare as some other file.
+-- The walk runs on the :p form before any fold by name, so a .. after a
+-- symlinked directory resolves through the filesystem as the kernel reads
+-- it, also while a later name is missing; a .. or . left in the missing tail
+-- folds by name, and the result is resolved once more in case the fold
+-- landed on a link. The one shape that still moves once made is a missing
+-- name followed by a link and a .. (missing/../link/../x): the fold by name
+-- crosses the link before it exists to the filesystem walk. No suite builds
+-- one; resolving the tail one component at a time would close it.
 function H.canon(path)
 	require_path("H.canon", path)
 	local full = vim.fn.fnamemodify(path, ":p")
@@ -55,7 +74,10 @@ function H.canon(path)
 	end
 	local head, tail, folded = full, {}, false
 	while true do
-		local real = uv.fs_realpath(head)
+		local real, err, kind = uv.fs_realpath(head)
+		if not real and kind ~= "ENOENT" and kind ~= "ENOTDIR" then
+			error("H.canon: " .. tostring(err), 2)
+		end
 		if real then
 			if #tail == 0 then
 				return vim.fs.normalize(real, { expand_env = false })
@@ -82,20 +104,30 @@ function H.canon(path)
 	end
 end
 
--- Whether two names denote one file; Windows file systems fold case.
+-- Whether two names denote one file. A missing name has no on-disk case for
+-- realpath to give, so the comparison folds case where the filesystem does
+-- (H.fs_folds_case), and refuses to answer where that was not measured.
 function H.same_path(a, b)
 	require_path("H.same_path", a)
 	require_path("H.same_path", b)
+	if H.fs_folds_case == nil then
+		error("H.same_path: the filesystem's case fold was not measured (Neovim has no tempdir)", 2)
+	end
 	a, b = H.canon(a), H.canon(b)
-	if is_win then
+	if H.fs_folds_case then
 		return a:lower() == b:lower()
 	end
 	return a == b
 end
 
 -- The repository root is the parent of tests/, whatever the current
--- directory; tests build plugin paths from it, so it is canonical.
-H.root = H.canon(vim.fn.fnamemodify(tests_dir, ":p:h:h"))
+-- directory. H.root is canonical, and tests build plugin paths and compare
+-- names from it; root_entry names the same directory the way the helper was
+-- loaded, which is what the runtimepath gets: a plain-named link to a
+-- directory whose real name carries a comma or a $ loads through its own
+-- name, where the physical one would be split or expanded.
+local root_entry = vim.fs.normalize(vim.fn.fnamemodify(tests_dir, ":p:h:h"), { expand_env = false })
+H.root = H.canon(root_entry)
 
 -- A fresh XDG tree per run: stdpath() reads the variables at call time
 -- (measured on 0.12.5), so cache, data and state move for everything created
@@ -135,9 +167,15 @@ end
 -- lua/<mod>/init.lua, so a flat file in an earlier entry wins (measured).
 -- The entries are the search path Neovim built, after it split, expanded
 -- and globbed the option (with backslashes on Windows), so the file comes
--- back canonical.
+-- back canonical. Building that list can itself raise (a brace group with a
+-- comma: E220, measured), so the error comes back as the second value for
+-- the proof to name.
 local function first_hit(modname)
-	for _, entry in ipairs(vim.api.nvim_list_runtime_paths()) do
+	local listed, entries = pcall(vim.api.nvim_list_runtime_paths)
+	if not listed then
+		return nil, "the runtimepath raised " .. tostring(entries)
+	end
+	for _, entry in ipairs(entries) do
 		for _, form in ipairs(module_forms(modname)) do
 			if uv.fs_stat(entry .. form) then
 				return H.canon(entry .. form)
@@ -147,13 +185,16 @@ local function first_hit(modname)
 end
 
 -- The runtimepath reads an entry at search time: a comma splits it, a $VAR
--- expands and a glob character matches, and an earlier entry answers first,
--- so the directory a suite prepends is not always the one require loads from
--- and a copy on the startup packpath answers instead (measured). Raises,
--- naming what require would load, unless modname resolves to root's own file.
--- Every caller passes a canonical root (H.root, or the directory H.rtp made
--- canonical), so the raise names it as given.
-local function prove_module(root, modname, label, reason)
+-- expands, a glob character matches, a backslash escapes, a brace group
+-- expands and a last component named after makes an after-directory, and an
+-- earlier entry answers first, so the directory a suite prepends is not
+-- always the one require loads from and a copy on the startup packpath
+-- answers instead (measured). Returns nil when modname resolves to root's
+-- own file, else the refusal naming what require would load (or what the
+-- search raised), which H.rtp raises at the suite's line. Every caller passes
+-- a canonical root (H.root, or the directory H.rtp made canonical), so the
+-- refusal names it as given.
+local function unproven(root, modname, label, reason)
 	local own
 	for _, form in ipairs(module_forms(modname)) do
 		if uv.fs_stat(root .. form) then
@@ -161,25 +202,39 @@ local function prove_module(root, modname, label, reason)
 			break
 		end
 	end
-	local hit = first_hit(modname)
-	if not (own and hit and H.same_path(hit, own)) then
-		error(("%s at %s does not resolve: %s (%s)"):format(label, root, tostring(hit), reason), 2)
+	local hit, raised = first_hit(modname)
+	if own and hit and H.same_path(hit, own) then
+		return nil
 	end
+	return ("%s at %s does not resolve: %s (%s)"):format(label, root, raised or tostring(hit), reason)
 end
 
--- The checkout goes first on the runtimepath and proves it is the copy
--- require loads. This file is live-server.nvim's verbatim except here: it
--- proves this plugin's modules and then finds live-server as a dependency.
--- live-server.nvim is found from $LIVE_SERVER_RTP, ./live-server-rtp (the CI
--- checkout) or the checkout's sibling live-server.nvim (the developer's
--- clone); the first that exists wins and is printed and returned canonical,
--- so a stale ./live-server-rtp shows in every run and a test compares the
--- name by value. A set override that is not a directory raises, and so does
--- finding none or a directory whose modules the search does not resolve to:
--- falling through would let require load whatever live-server the startup
--- runtimepath or packpath carries.
+-- The reason a refusal gives when the directory holds the module and the
+-- search still answers elsewhere.
+local RTP_SYNTAX =
+	"a name the runtimepath reads differently (a comma, a dollar sign, a glob character, a backslash, a brace, or a name ending in after)"
+
+-- The live-server floor this plugin's release notes promise, written once:
+-- the not-found message and the suites read it here, and CI's floor step
+-- checks this line against the workflow's LIVE_SERVER_FLOOR.
+H.live_server_floor = "v1.5.0"
+
+-- The checkout goes first on the runtimepath, by the name the helper was
+-- loaded through, and proves it is the copy require loads.
+-- live-server.nvim's copy of this file is one source with this one outside
+-- H.rtp, indentation aside: here H.rtp proves this plugin's modules and then
+-- finds live-server as a dependency. live-server.nvim is found from
+-- $LIVE_SERVER_RTP, ./live-server-rtp (the CI checkout) or the checkout's
+-- sibling live-server.nvim (the developer's clone); the first that exists
+-- wins, goes on the runtimepath by the name it was found under, and is
+-- printed and returned canonical, so a stale ./live-server-rtp shows in
+-- every run and a test compares the name by value. A set override that is
+-- not a directory raises, and so does finding none or a directory whose
+-- modules the search does not resolve to: falling through would let require
+-- load whatever live-server the startup runtimepath or packpath carries.
+-- Every raise names the suite's H.rtp() line.
 function H.rtp()
-	vim.opt.runtimepath:prepend(H.root)
+	vim.opt.runtimepath:prepend(root_entry)
 	-- Every module the checkout ships, since a copy elsewhere can shadow any
 	-- one of them; vim.fs.dir does not glob, where glob() would read a glob
 	-- character in H.root (it does expand an environment variable in the
@@ -192,12 +247,19 @@ function H.rtp()
 			table.insert(modules, "markdown_preview." .. base)
 		end
 	end
-	local function prove_root(reason)
+	-- The first refusal among this plugin's modules, or nil.
+	local function root_refusal(reason)
 		for _, modname in ipairs(modules) do
-			prove_module(H.root, modname, "the checkout", reason)
+			local refusal = unproven(H.root, modname, "the checkout", reason)
+			if refusal then
+				return refusal
+			end
 		end
 	end
-	prove_root("a name the runtimepath reads differently: a comma, a dollar sign, a glob character")
+	local refusal = root_refusal(RTP_SYNTAX)
+	if refusal then
+		error(refusal, 2)
+	end
 	-- Built one by one: a nil first element would end ipairs before the
 	-- fallbacks, so an unset LIVE_SERVER_RTP would find nothing.
 	local candidates = {}
@@ -206,7 +268,7 @@ function H.rtp()
 		if vim.fn.isdirectory(path) == 0 then
 			-- The value as set: it names the variable, not a path this run
 			-- resolved.
-			error("LIVE_SERVER_RTP is set but is not a directory: " .. path)
+			error("LIVE_SERVER_RTP is set but is not a directory: " .. path, 2)
 		end
 		table.insert(candidates, path)
 	end
@@ -217,37 +279,48 @@ function H.rtp()
 	local sibling = vim.fs.dirname(H.root) .. "/live-server.nvim"
 	table.insert(candidates, ci_checkout)
 	table.insert(candidates, sibling)
-	for _, dir in ipairs(candidates) do
-		if vim.fn.isdirectory(dir) == 1 then
-			-- Canonical, so a relative override does not follow a later
-			-- directory change and a .. resolves through the filesystem, as
-			-- the check above read it (measured); the name was checked
-			-- literally, so a $ in it stays a character.
-			dir = H.canon(dir)
-			vim.opt.runtimepath:prepend(dir)
+	for _, found in ipairs(candidates) do
+		if vim.fn.isdirectory(found) == 1 then
+			-- The entry is the name found, absolute so a relative override
+			-- does not follow a later directory change, and a $ in it kept
+			-- literal as the directory check read it: a plain-named link to
+			-- a directory whose real name carries a comma loads. The name
+			-- every proof, print and return uses is canonical, so a ..
+			-- resolves through the filesystem (measured).
+			local entry = vim.fs.normalize(vim.fn.fnamemodify(found, ":p"), { expand_env = false })
+			local dir = H.canon(found)
+			vim.opt.runtimepath:prepend(entry)
 			-- The plugin requires both modules and server.lua requires util.
 			for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
-				prove_module(
+				refusal = unproven(
 					dir,
 					modname,
 					"live-server.nvim",
-					"a directory without lua/live_server/server.lua and util.lua, or a name the runtimepath reads differently (a comma, a dollar sign, a glob character)"
+					"a directory without lua/live_server/server.lua and util.lua, or " .. RTP_SYNTAX
 				)
+				if refusal then
+					error(refusal, 2)
+				end
 			end
-			-- The prepend puts dir before the checkout, so a directory that
-			-- also carries this plugin's modules, in either file form,
+			-- The prepend puts the entry before the checkout, so a directory
+			-- that also carries this plugin's modules, in either file form,
 			-- answered require instead while every proof above passed
 			-- (measured): prove the root again.
-			prove_root(("live-server.nvim at %s carries this plugin's modules too"):format(dir))
+			refusal = root_refusal(("live-server.nvim at %s carries this plugin's modules too"):format(dir))
+			if refusal then
+				error(refusal, 2)
+			end
 			print("live-server.nvim: " .. dir)
 			return dir
 		end
 	end
 	error(
-		("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (v1.5.0 or newer) to %s or %s, or set LIVE_SERVER_RTP to a checkout"):format(
+		("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (%s or newer) to %s or %s, or set LIVE_SERVER_RTP to a checkout"):format(
+			H.live_server_floor,
 			ci_checkout,
 			sibling
-		)
+		),
+		2
 	)
 end
 
@@ -263,6 +336,14 @@ function H.write_file(path, data)
 	assert(uv.fs_close(fd))
 end
 
+-- A finished vim.system process's exit read the shell's way: a process killed
+-- by a signal reports code 0 with the signal set (measured), which would read
+-- as a clean exit, so it is 128 + the signal; a nonzero code wins, so
+-- vim.system's own timeout stays 124.
+function H.exit_code(result)
+	return result.code ~= 0 and result.code or (result.signal ~= 0 and 128 + result.signal or 0)
+end
+
 -- Synchronous GET through curl, hermetic and bounded. -q (curl honours it
 -- only as the first argument) skips every curlrc, -g stops brace and bracket
 -- globbing, --path-as-is sends dot segments as written so the server, not
@@ -276,9 +357,9 @@ end
 -- by curl's rules, so a test that needs the body asserts on it. vim.system
 -- returns the body byte for byte, where vim.fn.system mapped NUL to SOH, and
 -- a SIGINT during its wait ends the suite, where vim.fn.system left a Neovim
--- that ignored INT and TERM (measured on 0.12.5). A curl killed by a signal
--- reports code 0, so curl_exit reads it the shell's way, 128 + the signal;
--- the timeout's own code (124) wins over the signal it sends. The first
+-- that ignored INT and TERM (measured on 0.12.5). curl_exit is curl's exit
+-- as H.exit_code reads it, so a curl killed by a signal is 128 + the signal
+-- and the timeout's own code (124) wins over the signal it sends. The first
 -- hosted Windows run read a refused port as a timeout (curl 28) under a
 -- connect bound of 2, which fits Windows retrying a refused loopback connect
 -- for about two seconds before it reports it; the bound now sits above that
@@ -308,7 +389,7 @@ function H.http_get(url, headers)
 	end
 	table.insert(cmd, url)
 	local result = vim.system(cmd, { text = false, timeout = 8000 }):wait()
-	local curl_exit = result.code ~= 0 and result.code or (result.signal ~= 0 and 128 + result.signal or 0)
+	local curl_exit = H.exit_code(result)
 	local body, status = (result.stdout or ""):match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
 	if curl_exit ~= 0 then
 		return { status = 0, body = body or "", curl_exit = curl_exit }

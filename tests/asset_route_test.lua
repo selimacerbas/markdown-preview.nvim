@@ -18,7 +18,7 @@ local ls_server = require("live_server.server")
 H.section("Section 1: the installed live-server is at or above the floor")
 H.ok(
 	type(ls_server.features) == "table" and ls_server.features.asset_route == true,
-	"live-server exports features.asset_route (v1.5.0 or newer)"
+	("live-server exports features.asset_route (%s or newer)"):format(H.live_server_floor)
 )
 
 local dir = H.tmpdir()
@@ -46,15 +46,22 @@ H.eq(
 	"a path above the document's directory is 404"
 )
 -- Containment is by the resolved path, not the spelling: a lexical check
--- served a link like this one (measured on a live-server mutant).
-if uv.fs_symlink("../outside.txt", dir .. "/link.txt") then
+-- served a link like this one (measured on a live-server mutant). A link
+-- that cannot be made, or is made and does not resolve (Windows takes the /
+-- in its target unconverted), proves nothing and is skipped, counted.
+local linked, link_err = uv.fs_symlink("../outside.txt", dir .. "/link.txt")
+if linked and uv.fs_stat(dir .. "/link.txt") then
 	H.eq(
 		H.http_get(base .. "/__live/asset?p=link.txt&t=" .. mp._token).status,
 		404,
 		"a symlink beside the document pointing above it is 404"
 	)
 else
-	H.skip("a symlink beside the document pointing above it is 404 (fs_symlink failed on this platform)")
+	H.skip(
+		"a symlink beside the document pointing above it is 404 ("
+			.. tostring(link_err or "the link does not resolve")
+			.. ")"
+	)
 end
 
 H.section("Section 3: the asset_root sidecar is gated")

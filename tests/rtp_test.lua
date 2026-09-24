@@ -3,7 +3,8 @@
 -- that is not a directory, a missing dependency, and a checkout or a
 -- directory the runtimepath does not resolve to raise instead of letting
 -- require fall through to an installed copy; the chosen directory beats an
--- installed copy, ./live-server-rtp beats the sibling clone, and the path it
+-- installed copy, ./live-server-rtp beats the sibling clone, a directory
+-- reached through a plain-named link loads by that name, and the path it
 -- returns is canonical. Every expected path is built through H.canon too, so
 -- an 8.3 name or a backslash on Windows, or /var against /private/var on
 -- macOS, never reads as a different file.
@@ -22,7 +23,8 @@ local ok, eq = H.ok, H.eq
 -- One child of the same binary per case, since a raise ends the process that
 -- runs it. Every child gets LIVE_SERVER_RTP (empty reads as unset), so a value
 -- in the caller's environment never leaks into a case; vim.system reports a
--- child killed at the bound as exit 124.
+-- child killed at the bound as exit 124, and one killed by a signal as code
+-- 0, which H.exit_code reads as 128 + the signal.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child(helpers, body, override, env, cwd)
@@ -33,7 +35,7 @@ local function child(helpers, body, override, env, cwd)
 		cwd = cwd,
 		timeout = CHILD_TIMEOUT_MS,
 	}):wait()
-	return r.code, (r.stdout or "") .. (r.stderr or "")
+	return H.exit_code(r), (r.stdout or "") .. (r.stderr or "")
 end
 
 -- The child's exit code when its output carries text, else what went wrong.
@@ -47,9 +49,10 @@ local function ruling(code, out, text)
 	return code
 end
 
--- A child that must succeed: its exit code is asserted, so expected output
--- printed before a crash or a timeout cannot pass the case. Returns the
--- output.
+-- A child that must succeed: its exit is asserted as child() reads it, so
+-- expected output printed before a timeout (124) or a death by signal (128
+-- + the signal, where vim.system's own code reads 0) cannot pass the case.
+-- Returns the output.
 local function succeeded(msg, helpers, body, override, env, cwd)
 	local code, out = child(helpers, body, override, env, cwd)
 	eq(code, 0, msg .. ": the child exits 0")
@@ -120,6 +123,26 @@ H.finish()]],
 local installed = child_data .. "/site/pack/t/start/installed"
 stub(installed)
 
+-- A child killed by a signal after its output must not read as the 0
+-- vim.system reports for it. SIGKILL, since Neovim catches SIGTERM and exits
+-- 1 through its own handler (measured on 0.10.0 and 0.12.5).
+if vim.fn.has("win32") == 1 then
+	H.skip("a child killed by SIGKILL after its output reads 137 (no POSIX signal on Windows)")
+else
+	local killed = child(
+		helpers_path,
+		[[
+H.ok(true, "x")
+H.finish()
+io.stdout:write("written before the kill\n")
+io.stdout:flush()
+local uv = vim.uv or vim.loop
+uv.kill(uv.os_getpid(), "sigkill")]],
+		""
+	)
+	eq(killed, 137, "a child killed by SIGKILL after its output reads 137")
+end
+
 H.section("Section 1: a lookup that cannot be proven raises")
 local code, out = child(helpers_path, "H.rtp()", "/nonexistent")
 eq(
@@ -138,7 +161,8 @@ fixture("no candidate on any lookup path raises, naming the clone, the floor and
 		ruling(
 			code,
 			out,
-			("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (v1.5.0 or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
+			("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (%s or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
+				H.live_server_floor,
 				H.canon(bare),
 				H.canon(base .. "/bare")
 			)
@@ -331,10 +355,13 @@ fixture("a symlinked checkout finds its physical sibling", function(msg)
 	-- Windows makes a file link unless told dir, and a file link to a
 	-- directory cannot be entered (the likely cause of the first hosted run's
 	-- exit 1); elsewhere the flag is ignored. A platform that refuses the link,
-	-- or a link the helper cannot be read through, skips both assertions once.
+	-- or a link the helper cannot be read through, skips both assertions, each
+	-- counted.
 	local linked, err = uv.fs_symlink(phys .. "/mp", link, { dir = true })
 	if not (linked and uv.fs_stat(link .. "/tests/helpers.lua")) then
-		H.skip(msg .. " (no directory symlink here: " .. tostring(err or "the link does not resolve") .. ")")
+		local why = " (no directory symlink here: " .. tostring(err or "the link does not resolve") .. ")"
+		H.skip(msg .. ": the child exits 0" .. why)
+		H.skip(msg .. why)
 		return
 	end
 	out = succeeded(
@@ -344,6 +371,37 @@ fixture("a symlinked checkout finds its physical sibling", function(msg)
 		""
 	)
 	eq(printed(out, "found"), H.canon(phys .. "/live-server.nvim"), msg)
+end)
+
+-- The runtimepath gets live-server by the name it was found under, so a
+-- plain-named link to a directory whose real name carries a comma loads,
+-- where the physical name would be split; the printed path and the file
+-- require loads are the canonical target.
+fixture("an override through a plain-named link to a path with a comma loads", function(msg)
+	local target = base .. "/co,mma-ls"
+	stub(target)
+	local link = base .. "/plain-link"
+	local linked, err = uv.fs_symlink(target, link, { dir = true })
+	if not (linked and uv.fs_stat(link .. "/lua/live_server/server.lua")) then
+		local why = " (no directory symlink here: " .. tostring(err or "the link does not resolve") .. ")"
+		for _, what in ipairs({ ": the child exits 0", ": the printed line names the target", ": require loads it" }) do
+			H.skip(msg .. what .. why)
+		end
+		return
+	end
+	out = succeeded(
+		msg,
+		helpers_path,
+		[[
+print("found=" .. H.rtp())
+print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
+H.ok(true, "reached")
+H.finish()]],
+		link,
+		{ XDG_DATA_HOME = data }
+	)
+	eq(printed(out, "found"), H.canon(target), msg .. ": the printed line names the target")
+	eq(loaded(out), H.canon(target .. "/lua/live_server/server.lua"), msg .. ": require loads it")
 end)
 
 -- Both default candidates exist in a copy of the tree, each a stub, so the
