@@ -24,8 +24,11 @@ local ok, eq = H.ok, H.eq
 -- runs it. Every child gets LIVE_SERVER_RTP (empty reads as unset), so a value
 -- in the caller's environment never leaks into a case; vim.system reports a
 -- child killed at the bound as exit 124, and one killed by a signal as code
--- 0, which H.exit_code reads as 128 + the signal.
-local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
+-- 0, which H.exit_code reads as 128 + the signal. A child loads the helper
+-- by the name this suite loaded it through, not by H.root: H.rtp puts the
+-- checkout on the runtimepath by that name, and through a plain-named link
+-- to a directory whose real name carries a comma the canonical one splits.
+local helpers_path = vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child(helpers, body, override, env, cwd)
 	local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
@@ -59,7 +62,9 @@ local function succeeded(msg, helpers, body, override, env, cwd)
 	return out
 end
 
--- The line a child printed after "name=".
+-- The value a child wrote after "name=". Children write such lines through
+-- H.write_line: on 0.12.5 a print line whose path made it a multiple of 80
+-- columns fused with the next one (measured).
 local function printed(out, name)
 	return out:match(name .. "=([^\r\n]*)")
 end
@@ -91,14 +96,27 @@ local function tree(root)
 	return root .. "/tests/helpers.lua"
 end
 
+-- One skip per assertion a case would have made, each named as it would have
+-- been: msg followed by each suffix ("" is msg itself).
+local function skip_each(msg, suffixes, why)
+	for _, suffix in ipairs(suffixes) do
+		H.skip(msg .. suffix .. " (" .. why .. ")")
+	end
+end
+-- The assertions a case makes: one eq named msg, or succeeded()'s exit check
+-- and then one named msg.
+local ONE = { "" }
+local CHILD_AND_ONE = { ": the child exits 0", "" }
+
 -- The runtimepath reads a comma, a dollar sign or a glob character in an
 -- entry as syntax, so a fixture under a temp path carrying one proves nothing
--- (measured with a comma in TMPDIR): such a run skips the case, counted.
+-- (measured with a comma in TMPDIR): such a run skips each of the case's
+-- assertions, counted, as suffixes lists them.
 local base = H.tmpdir()
 local odd_temp = base:find("[,$*?%[%]{}]") ~= nil
-local function fixture(msg, fn)
+local function fixture(msg, suffixes, fn)
 	if odd_temp then
-		H.skip(msg .. " (the temp path " .. base .. " carries a comma, a dollar sign or a glob character)")
+		skip_each(msg, suffixes, "the temp path " .. base .. " carries a comma, a dollar sign or a glob character")
 		return
 	end
 	fn(msg)
@@ -112,7 +130,7 @@ local child_data = printed(
 		"the child reports its data directory",
 		helpers_path,
 		[[
-io.stdout:write("data=" .. vim.fn.stdpath("data") .. "\n")
+H.write_line("data=" .. vim.fn.stdpath("data"))
 H.ok(true, "reported")
 H.finish()]],
 		"",
@@ -154,7 +172,7 @@ eq(
 -- H.root follows the helper's own path, so a copy of it in a tree with no
 -- ./live-server-rtp and no sibling clone finds nothing; the message names
 -- where to clone from, the floor and both paths, canonical.
-fixture("no candidate on any lookup path raises, naming the clone, the floor and both paths", function(msg)
+fixture("no candidate on any lookup path raises, naming the clone, the floor and both paths", ONE, function(msg)
 	local bare = base .. "/bare/mp"
 	code, out = child(tree(bare), "H.rtp()", "")
 	eq(
@@ -178,7 +196,7 @@ eq(ruling(code, out, "does not resolve"), 1, "an empty override directory raises
 -- The runtimepath expands $HOME in the entry when it searches, so the stub
 -- under the literal name is never the one resolved (measured) and require
 -- would load the start package; the refusal names both.
-fixture("an override with a $ in its name raises, naming the shadowing copy", function(msg)
+fixture("an override with a $ in its name raises, naming the shadowing copy", ONE, function(msg)
 	local odd = base .. "/odd$HOME-x"
 	-- A file system that refuses the name skips the case, measured by the
 	-- mkdir itself rather than by the platform (NTFS takes a $).
@@ -206,7 +224,7 @@ end)
 -- An override above a start package: the search resolves the package's
 -- server.lua, whose path starts with the override's, so only equality with
 -- the override's own file refuses it.
-fixture("an override that holds an installed copy below it raises", function(msg)
+fixture("an override that holds an installed copy below it raises", ONE, function(msg)
 	code, out = child(helpers_path, "H.rtp()", data, { XDG_DATA_HOME = data })
 	eq(
 		ruling(
@@ -224,7 +242,7 @@ end)
 
 -- The plugin and server.lua both require util, so a directory holding
 -- server.lua alone would load util from the start package (measured).
-fixture("an override without util.lua raises, naming the copy util resolves to", function(msg)
+fixture("an override without util.lua raises, naming the copy util resolves to", ONE, function(msg)
 	local partial = base .. "/partial"
 	stub(partial, { "server" })
 	code, out = child(helpers_path, "H.rtp()", partial, { XDG_DATA_HOME = data })
@@ -244,7 +262,7 @@ end)
 
 -- A comma in the checkout's own path splits its entry, and require loaded an
 -- installed copy of this plugin instead of the checkout (measured).
-fixture("a checkout whose path the runtimepath splits raises, naming the installed copy", function(msg)
+fixture("a checkout whose path the runtimepath splits raises, naming the installed copy", ONE, function(msg)
 	local split = base .. "/a,b/mp"
 	local installed_mp = child_data .. "/site/pack/t/start/installed-mp"
 	vim.fn.mkdir(installed_mp .. "/lua/markdown_preview", "p")
@@ -267,7 +285,7 @@ end)
 -- The live-server directory goes before the checkout on the runtimepath, so
 -- one that also carries this plugin's modules answered require while every
 -- proof passed (measured); the root is proven again after the prepend.
-fixture("a live-server directory that carries this plugin's modules raises, naming them", function(msg)
+fixture("a live-server directory that carries this plugin's modules raises, naming them", ONE, function(msg)
 	local dep = base .. "/dep"
 	stub(dep)
 	vim.fn.mkdir(dep .. "/lua/markdown_preview", "p")
@@ -289,7 +307,7 @@ end)
 -- submodule the checkout ships, answered require while a proof of init.lua
 -- alone passed (measured); H.rtp raises before any require runs.
 for _, shadow in ipairs({ "lua/markdown_preview.lua", "lua/markdown_preview/lock/init.lua" }) do
-	fixture("a live-server directory carrying " .. shadow .. " raises, naming it", function(msg)
+	fixture("a live-server directory carrying " .. shadow .. " raises, naming it", ONE, function(msg)
 		local dep = base .. "/shadow-" .. shadow:gsub("[/.]", "-")
 		stub(dep)
 		vim.fn.mkdir(vim.fs.dirname(dep .. "/" .. shadow), "p")
@@ -312,12 +330,12 @@ local plain = base .. "/plain"
 stub(plain)
 -- The .. resolves through the filesystem, as the directory check read it,
 -- and the path comes back canonical (on macOS /private/var, not /var).
-fixture("an override reached through .. comes back normalized", function(msg)
+fixture("an override reached through .. comes back normalized", CHILD_AND_ONE, function(msg)
 	vim.fn.mkdir(base .. "/sub", "p")
 	out = succeeded(
 		msg,
 		helpers_path,
-		'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		'H.write_line("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
 		base .. "/sub/../plain"
 	)
 	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
@@ -326,11 +344,11 @@ end)
 -- Resolved against the child's working directory, which Windows keeps in
 -- the 8.3 form the parent gave it (the first hosted run), so both sides are
 -- canonical.
-fixture("a relative override comes back absolute", function(msg)
+fixture("a relative override comes back absolute", CHILD_AND_ONE, function(msg)
 	out = succeeded(
 		msg,
 		helpers_path,
-		'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		'H.write_line("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
 		"plain",
 		nil,
 		base
@@ -340,13 +358,17 @@ end)
 
 -- An absolute override under the temp root comes back as the filesystem
 -- names it (/private/var on macOS, the long name on Windows), not as typed.
-fixture("an absolute override comes back canonical", function(msg)
-	out =
-		succeeded(msg, helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/plain")
+fixture("an absolute override comes back canonical", CHILD_AND_ONE, function(msg)
+	out = succeeded(
+		msg,
+		helpers_path,
+		'H.write_line("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		base .. "/plain"
+	)
 	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
 end)
 
-fixture("a symlinked checkout finds its physical sibling", function(msg)
+fixture("a symlinked checkout finds its physical sibling", CHILD_AND_ONE, function(msg)
 	local phys = base .. "/phys"
 	tree(phys .. "/mp")
 	stub(phys .. "/live-server.nvim")
@@ -359,15 +381,13 @@ fixture("a symlinked checkout finds its physical sibling", function(msg)
 	-- counted.
 	local linked, err = uv.fs_symlink(phys .. "/mp", link, { dir = true })
 	if not (linked and uv.fs_stat(link .. "/tests/helpers.lua")) then
-		local why = " (no directory symlink here: " .. tostring(err or "the link does not resolve") .. ")"
-		H.skip(msg .. ": the child exits 0" .. why)
-		H.skip(msg .. why)
+		skip_each(msg, CHILD_AND_ONE, "no directory symlink here: " .. tostring(err or "the link does not resolve"))
 		return
 	end
 	out = succeeded(
 		msg,
 		link .. "/tests/helpers.lua",
-		'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		'H.write_line("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
 		""
 	)
 	eq(printed(out, "found"), H.canon(phys .. "/live-server.nvim"), msg)
@@ -377,24 +397,22 @@ end)
 -- plain-named link to a directory whose real name carries a comma loads,
 -- where the physical name would be split; the printed path and the file
 -- require loads are the canonical target.
-fixture("an override through a plain-named link to a path with a comma loads", function(msg)
+local PLAIN_LINK = { ": the child exits 0", ": the printed line names the target", ": require loads it" }
+fixture("an override through a plain-named link to a path with a comma loads", PLAIN_LINK, function(msg)
 	local target = base .. "/co,mma-ls"
 	stub(target)
 	local link = base .. "/plain-link"
 	local linked, err = uv.fs_symlink(target, link, { dir = true })
 	if not (linked and uv.fs_stat(link .. "/lua/live_server/server.lua")) then
-		local why = " (no directory symlink here: " .. tostring(err or "the link does not resolve") .. ")"
-		for _, what in ipairs({ ": the child exits 0", ": the printed line names the target", ": require loads it" }) do
-			H.skip(msg .. what .. why)
-		end
+		skip_each(msg, PLAIN_LINK, "no directory symlink here: " .. tostring(err or "the link does not resolve"))
 		return
 	end
 	out = succeeded(
 		msg,
 		helpers_path,
 		[[
-print("found=" .. H.rtp())
-print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
+H.write_line("found=" .. H.rtp())
+H.write_line("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
 H.finish()]],
 		link,
@@ -406,35 +424,39 @@ end)
 
 -- Both default candidates exist in a copy of the tree, each a stub, so the
 -- printed line and the loaded source say which one won.
-fixture("./live-server-rtp beats the sibling clone", function(msg)
-	local root = base .. "/order/mp"
-	local helpers = tree(root)
-	stub(root .. "/live-server-rtp")
-	stub(base .. "/order/live-server.nvim")
-	out = succeeded(
-		msg,
-		helpers,
-		[[
+fixture(
+	"./live-server-rtp beats the sibling clone",
+	{ ": the child exits 0", ": the printed line names it", ": require loads it" },
+	function(msg)
+		local root = base .. "/order/mp"
+		local helpers = tree(root)
+		stub(root .. "/live-server-rtp")
+		stub(base .. "/order/live-server.nvim")
+		out = succeeded(
+			msg,
+			helpers,
+			[[
 H.rtp()
-print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
+H.write_line("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
 H.finish()]],
-		""
-	)
-	eq(
-		out:match("live%-server%.nvim: ([^\r\n]*)"),
-		H.canon(root .. "/live-server-rtp"),
-		msg .. ": the printed line names it"
-	)
-	eq(loaded(out), H.canon(root .. "/live-server-rtp/lua/live_server/server.lua"), msg .. ": require loads it")
-end)
+			""
+		)
+		eq(
+			out:match("live%-server%.nvim: ([^\r\n]*)"),
+			H.canon(root .. "/live-server-rtp"),
+			msg .. ": the printed line names it"
+		)
+		eq(loaded(out), H.canon(root .. "/live-server-rtp/lua/live_server/server.lua"), msg .. ": require loads it")
+	end
+)
 
 -- An installed copy sits on the child's packpath beside a real live-server
 -- at the override; prepend puts the override first, where append would let
 -- the installed copy answer.
-fixture("the chosen live-server beats an installed copy", function(msg)
+fixture("the chosen live-server beats an installed copy", CHILD_AND_ONE, function(msg)
 	if not found_ok then
-		H.skip(msg .. " (no live-server found: " .. tostring(real_ls):gsub("\n.*", "") .. ")")
+		skip_each(msg, CHILD_AND_ONE, "no live-server found: " .. tostring(real_ls):gsub("\n.*", ""))
 		return
 	end
 	out = succeeded(
@@ -442,7 +464,7 @@ fixture("the chosen live-server beats an installed copy", function(msg)
 		helpers_path,
 		[[
 H.rtp()
-print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
+H.write_line("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
 H.finish()]],
 		real_ls,
@@ -460,8 +482,8 @@ if vim.fn.isdirectory(ci_checkout) == 1 or vim.fn.isdirectory(sibling) == 1 then
 		"the default path",
 		helpers_path,
 		[[
-print("found=" .. H.rtp())
-print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
+H.write_line("found=" .. H.rtp())
+H.write_line("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
 H.finish()]],
 		""
@@ -472,7 +494,11 @@ H.finish()]],
 		"the default path: require loads from the directory H.rtp() prints"
 	)
 else
-	H.skip("the default path (neither " .. ci_checkout .. " nor " .. sibling .. " exists)")
+	skip_each(
+		"the default path",
+		{ ": the child exits 0", ": require loads from the directory H.rtp() prints" },
+		"neither " .. ci_checkout .. " nor " .. sibling .. " exists"
+	)
 end
 
 H.finish()

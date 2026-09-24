@@ -51,10 +51,11 @@ jobs:
           persist-credentials: false
       # A moved tag is the supply-chain event this step surfaces: the checkout
       # took the pinned commit, and the tag must still name it. The helper's
-      # floor must name the same tag, so a bump that edits one place reds.
+      # floor assignment, matched as a whole line, must name the same tag, so a
+      # bump that edits one place reds even with the old line left in a comment.
       - name: live-server floor is the pinned tag
         run: |
-          if ! grep -qF "live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
+          if ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
             echo "::error::tests/helpers.lua's H.live_server_floor does not name $LIVE_SERVER_FLOOR"
             exit 1
           fi
@@ -105,10 +106,11 @@ jobs:
           persist-credentials: false
       # A moved tag is the supply-chain event this step surfaces: the checkout
       # took the pinned commit, and the tag must still name it. The helper's
-      # floor must name the same tag, so a bump that edits one place reds.
+      # floor assignment, matched as a whole line, must name the same tag, so a
+      # bump that edits one place reds even with the old line left in a comment.
       - name: live-server floor is the pinned tag
         run: |
-          if ! grep -qF "live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
+          if ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
             echo "::error::tests/helpers.lua's H.live_server_floor does not name $LIVE_SERVER_FLOOR"
             exit 1
           fi
@@ -196,10 +198,11 @@ jobs:
           persist-credentials: false
       # A moved tag is the supply-chain event this step surfaces: the checkout
       # took the pinned commit, and the tag must still name it. The helper's
-      # floor must name the same tag, so a bump that edits one place reds.
+      # floor assignment, matched as a whole line, must name the same tag, so a
+      # bump that edits one place reds even with the old line left in a comment.
       - name: live-server floor is the pinned tag
         run: |
-          if ! grep -qF "live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
+          if ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
             echo "::error::tests/helpers.lua's H.live_server_floor does not name $LIVE_SERVER_FLOOR"
             exit 1
           fi

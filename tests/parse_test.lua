@@ -2,7 +2,8 @@
 -- Every tracked Lua file parses under this Neovim's LuaJIT. No other suite
 -- loads the plugin's entry module or plugin/, so a parse error there passed
 -- every job; the list is git's, so an untracked file never enters and a
--- checkout without git fails here instead of checking nothing.
+-- tree without git's index (a git archive copy, a tarball) fails here,
+-- saying so, instead of checking nothing.
 --
 -- Run: nvim --headless -u NONE -l tests/parse_test.lua
 
@@ -12,10 +13,12 @@ H.isolate()
 H.section("Section 1: every tracked Lua file parses")
 local listed = vim.system({ "git", "ls-files", "-z", "--", "*.lua" }, { cwd = H.root, text = true }):wait()
 local git_exit = H.exit_code(listed)
-H.ok(
-	git_exit == 0,
-	"git lists the tracked Lua files" .. (git_exit ~= 0 and (": " .. vim.trim(listed.stderr or "")) or "")
-)
+local why = ""
+if git_exit ~= 0 then
+	why = " (this suite needs a git checkout; a git archive copy or a tarball has no index): "
+		.. vim.trim(listed.stderr or "")
+end
+H.ok(git_exit == 0, "git lists the tracked Lua files" .. why)
 local files = vim.split(listed.stdout or "", "\0", { plain = true, trimempty = true })
 H.ok(#files > 0, ("git lists %d tracked Lua files"):format(#files))
 for _, rel in ipairs(files) do

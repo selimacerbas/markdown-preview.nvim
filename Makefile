@@ -35,10 +35,11 @@ lint-text: ## Refuse the em dash character in code, product copy and configurati
 
 # git blame skips an entry that names no commit without a word, so a rebase
 # that rewrote the format commit would leave the file ignoring nothing. Each
-# entry must be a full commit name HEAD contains.
+# entry must be a full commit name HEAD contains; read stops at a last line
+# with no newline, which git blame still reads, so that line is read too.
 lint-blame: ## Fail when .git-blame-ignore-revs names a commit HEAD does not contain
 	@n=0; \
-	while read -r sha rest; do \
+	while read -r sha rest || [ -n "$$sha" ]; do \
 		case "$$sha" in ''|'#'*) continue ;; esac; \
 		if [ "$$(git rev-parse --verify --quiet "$$sha^{commit}")" != "$$sha" ] \
 			|| ! git merge-base --is-ancestor "$$sha" HEAD; then \

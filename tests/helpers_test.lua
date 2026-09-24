@@ -265,6 +265,18 @@ H.finish()]],
 	0,
 	"a child's \\r\\n line ends read as \\n"
 )
+-- A line a parent reads back goes through H.write_line: on 0.12.5 a print
+-- line that fills a multiple of 80 columns lost its newline to the next
+-- (measured at 80, 160, 240 and 320; never on 0.10.0), so the length of a
+-- temp path decided whether two captured lines stayed two.
+eq(
+	child_exit(
+		('H.write_line(%q)\nH.write_line("second")\nH.ok(true, "x")\nH.finish()'):format(("x"):rep(80)),
+		("x"):rep(80) .. "\n+second\n"
+	),
+	0,
+	"a line of exactly 80 columns and the next one stay two lines"
+)
 -- A quit a callback still holds when the main chunk ends runs during Neovim's
 -- teardown, after the ruling, and set the exit code again (measured).
 eq(

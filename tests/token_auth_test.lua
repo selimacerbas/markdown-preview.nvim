@@ -60,6 +60,10 @@ ok(
 	),
 	"a workspace that climbs out of the cache with .. does not sit under it"
 )
+ok(
+	not sits_under(vim.fn.stdpath("cache") .. "x/markdown-preview", vim.fn.stdpath("cache")),
+	"a sibling whose name starts with the cache's does not sit under it"
+)
 local written = {}
 for _, cache in ipairs(startup_caches) do
 	local dir = vim.fs.joinpath(cache, "markdown-preview", vim.fs.basename(workspace))
