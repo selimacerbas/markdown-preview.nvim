@@ -8,7 +8,7 @@
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 local xdg_root = H.isolate()
-H.ok(H.rtp() ~= nil, "live-server.nvim found on one of the three lookup paths")
+H.rtp()
 
 H.section("Section 0: isolation")
 H.ok(vim.fn.stdpath("cache"):find(xdg_root, 1, true) == 1, "stdpath('cache') sits under the temp XDG root")

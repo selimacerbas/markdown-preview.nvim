@@ -39,7 +39,8 @@ end
 -- live-server.nvim, the dependency, is found from $LIVE_SERVER_RTP,
 -- ./live-server-rtp (the CI checkout) or ../live-server.nvim (the sibling
 -- clone); the first that exists wins. A set override that is not a directory
--- raises: falling through would run the suite against another live-server.
+-- raises, and so does finding none: falling through would let require load
+-- whatever live-server the startup runtimepath or packpath carries.
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
     -- Built one by one: a nil first element would end ipairs before the
@@ -56,13 +57,14 @@ function H.rtp()
     table.insert(candidates, H.root .. "/../live-server.nvim")
     for _, dir in ipairs(candidates) do
         if vim.fn.isdirectory(dir) == 1 then
-            -- The sibling candidate carries a ".." segment no caller should see.
-            dir = vim.fs.normalize(dir)
+            -- The sibling candidate carries a ".." segment no caller should
+            -- see; the name was checked literally, so a $ in it stays literal.
+            dir = vim.fs.normalize(dir, { expand_env = false })
             vim.opt.runtimepath:prepend(dir)
             return dir
         end
     end
-    return nil
+    error("live-server.nvim not found: set LIVE_SERVER_RTP, or check it out at ./live-server-rtp or ../live-server.nvim")
 end
 
 function H.tmpdir()
