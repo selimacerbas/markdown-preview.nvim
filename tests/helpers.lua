@@ -21,15 +21,38 @@ local real_exit = os.exit
 local is_win = vim.fn.has("win32") == 1
 
 -- One spelling per file, so a suite compares names by value and a message
--- prints the name a test builds: absolute, then the name the filesystem
--- gives where the path exists (it folds a symlink, /var against /private/var
--- on macOS and an 8.3 short name such as RUNNER~1, which tempname() returns
--- on Windows), then forward slashes and no trailing one, a $ kept literal.
--- realpath needs the path to exist, so a name not yet created keeps its :p
--- form: build it from a canonical parent.
+-- prints the name a test builds: absolute (a .. resolved by :p through the
+-- filesystem, as the kernel reads it), then the name the filesystem gives
+-- (it folds a symlink, /var against /private/var on macOS and an 8.3 short
+-- name such as RUNNER~1, which tempname() returns on Windows), with forward
+-- slashes, no trailing one and a $ kept literal. realpath needs the path to
+-- exist, so a name not yet created resolves through its deepest existing
+-- ancestor: it reads the same before and after it is made, and a second
+-- pass changes nothing. A nil or empty name raises, where :p would read it
+-- as a file named v:null or as the working directory and a comparison would
+-- pass by accident.
 function H.canon(path)
-    local full = vim.fn.fnamemodify(path, ":p")
-    return vim.fs.normalize(uv.fs_realpath(full) or full, { expand_env = false })
+    if type(path) ~= "string" or path == "" then
+        error(("H.canon: a path is a non-empty string, not %s"):format(vim.inspect(path)), 2)
+    end
+    local full = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"), { expand_env = false })
+    local head, tail = full, {}
+    while true do
+        local real = uv.fs_realpath(head)
+        if real then
+            real = vim.fs.normalize(real, { expand_env = false })
+            if #tail == 0 then
+                return real
+            end
+            return (real:sub(-1) == "/" and real or real .. "/") .. table.concat(tail, "/")
+        end
+        local parent = vim.fs.dirname(head)
+        if parent == head then
+            return full
+        end
+        table.insert(tail, 1, vim.fs.basename(head))
+        head = parent
+    end
 end
 
 -- Whether two names denote one file; Windows file systems fold case.
@@ -99,6 +122,8 @@ end
 -- so the directory a suite prepends is not always the one require loads from
 -- and a copy on the startup packpath answers instead (measured). Raises,
 -- naming what require would load, unless modname resolves to root's own file.
+-- Every caller passes a canonical root (H.root, or the directory H.rtp made
+-- canonical), so the raise names it as given.
 local function prove_module(root, modname, label, reason)
     local own
     for _, form in ipairs(module_forms(modname)) do
@@ -109,7 +134,7 @@ local function prove_module(root, modname, label, reason)
     end
     local hit = first_hit(modname)
     if not (own and hit and H.same_path(hit, own)) then
-        error(("%s at %s does not resolve: %s (%s)"):format(label, H.canon(root), tostring(hit), reason), 2)
+        error(("%s at %s does not resolve: %s (%s)"):format(label, root, tostring(hit), reason), 2)
     end
 end
 
@@ -224,11 +249,12 @@ end
 -- a SIGINT during its wait ends the suite, where vim.fn.system left a Neovim
 -- that ignored INT and TERM (measured on 0.12.5). A curl killed by a signal
 -- reports code 0, so curl_exit reads it the shell's way, 128 + the signal;
--- the timeout's own code (124) wins over the signal it sends. Windows
--- retries a refused loopback connect for about two seconds before it
--- reports the refusal, so a connect bound of 2 read a refused port as a
--- timeout there (curl 28 on the first hosted run); the bound sits above that
--- window and below --max-time, so refused is curl 7 on every platform.
+-- the timeout's own code (124) wins over the signal it sends. The first
+-- hosted Windows run read a refused port as a timeout (curl 28) under a
+-- connect bound of 2, which fits Windows retrying a refused loopback connect
+-- for about two seconds before it reports it; the bound now sits above that
+-- window and below --max-time, so refused should read curl 7 there too (the
+-- next Windows run is the measurement).
 function H.http_get(url, headers)
     local cmd = {
         "curl",

@@ -122,9 +122,10 @@ H.section("Section 3: the exit code is the ruling")
 -- instead of a stalled suite; vim.system reports that timeout as exit 124.
 -- opts.env adds to the child's environment, opts.helpers loads another copy
 -- of the helper, opts.prelude runs before the helper loads and opts.cwd is
--- the child's working directory. A Windows child ends its lines in \r\n,
--- which a pattern naming \n missed (the first hosted run), so the output is
--- read with every line end folded to \n, once, here.
+-- the child's working directory. The first hosted run's log reads as a
+-- Windows child ending its lines in \r\n, which a pattern naming \n misses
+-- (the next Windows run is the measurement), so the output is read with
+-- every line end folded to \n, once, here.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child_exit(body, expect, opts)
@@ -535,5 +536,76 @@ else
         "a checkout whose path the runtimepath splits raises, naming the installed copy"
     )
 end
+
+H.section("Section 7: one spelling per path")
+-- A tempname() is the raw form a suite starts from: through /var on macOS,
+-- an 8.3 name on Windows. The inputs each spell one file a second way.
+local p = H.tmpdir()
+local canon_p = H.canon(p)
+vim.fn.mkdir(p .. "/phys/t", "p")
+vim.fn.mkdir(p .. "/phys/only-phys", "p")
+vim.fn.mkdir(p .. "/links", "p")
+eq(
+    canon_p,
+    vim.fs.normalize(uv.fs_realpath(p), { expand_env = false }),
+    "an existing path is the name the filesystem gives it"
+)
+eq(H.canon(p .. "/phys/"), canon_p .. "/phys", "a trailing slash names the same directory")
+eq(
+    H.canon(p .. "/nope/deeper"),
+    canon_p .. "/nope/deeper",
+    "a missing name resolves through its deepest existing ancestor"
+)
+-- normalize expands $VAR unless told not to, and a $ in a directory's name
+-- is a character: a message names the directory that exists
+-- (markdown-preview's rtp_test override case).
+assert(uv.fs_mkdir(p .. "/odd$HOME-x", 493))
+eq(H.canon(p .. "/odd$HOME-x"), canon_p .. "/odd$HOME-x", "a $ in an existing name stays a character")
+eq(H.canon(p .. "/gone$HOME-y"), canon_p .. "/gone$HOME-y", "a $ in a missing name stays a character")
+local unstable = {}
+for _, name in ipairs({ p, p .. "/phys/../phys", p .. "/nope", p .. "/missing/../phys", p .. "/odd$HOME-x", "." }) do
+    if H.canon(H.canon(name)) ~= H.canon(name) then
+        table.insert(unstable, name)
+    end
+end
+eq(table.concat(unstable, ", "), "", "a second pass changes nothing")
+-- Windows makes a file link unless told dir. A .. after a link resolves from
+-- the link's target on POSIX, as :p reads it through the filesystem; Win32
+-- resolves it by name before the filesystem sees it.
+local link = p .. "/links/t"
+local linked, link_err = uv.fs_symlink(p .. "/phys/t", link, { dir = true })
+if linked and uv.fs_stat(link) then
+    eq(H.canon(link), canon_p .. "/phys/t", "a directory symlink folds to its target")
+    if vim.fn.has("win32") == 1 then
+        H.skip("a .. after a directory symlink resolves from its target (Win32 resolves .. by name)")
+    else
+        eq(
+            H.canon(link .. "/../only-phys"),
+            canon_p .. "/phys/only-phys",
+            "a .. after a directory symlink resolves from its target"
+        )
+    end
+else
+    H.skip("the symlink folds (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")")
+end
+ok(
+    (p .. "/phys/") ~= (p .. "/phys") and H.same_path(p .. "/phys/", p .. "/phys"),
+    "two strings that name one file are the same path"
+)
+ok(H.same_path(p, canon_p), "a raw tempname and its canonical form are the same path")
+ok(not H.same_path(p .. "/phys", p .. "/links"), "two directories are two paths")
+-- A missing name has no on-disk case for realpath to give, so only the fold
+-- makes two spellings of it one path, and only where the file system folds.
+eq(
+    H.same_path(p .. "/nope", p .. "/NOPE"),
+    vim.fn.has("win32") == 1,
+    "two cases of a missing name are one path on Windows only"
+)
+local function refused(fn, ...)
+    local done, err = pcall(fn, ...)
+    return not done and tostring(err):find("non%-empty string") ~= nil
+end
+ok(refused(H.canon, nil) and refused(H.canon, ""), "H.canon refuses nil and an empty string")
+ok(refused(H.same_path, nil, nil) and refused(H.same_path, p, ""), "H.same_path refuses nil and an empty string")
 
 H.finish()

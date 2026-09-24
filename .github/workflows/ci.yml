@@ -136,9 +136,10 @@ jobs:
     name: upstream (${{ matrix.os }}, live-server main)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
-    # The run's conclusion follows the required check: upstream, nightly and
-    # windows are read from their own conclusions (a red one is a finding for
-    # F-01 or an upstream note, never a merge block).
+    # Upstream and windows run beside the required check on every push, so
+    # the run's conclusion follows the required check and each is read from
+    # its own conclusion (a red one is a finding for F-01 or an upstream note,
+    # never a merge block).
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -173,7 +174,8 @@ jobs:
     name: nightly (${{ matrix.os }}, live-server main)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
-    continue-on-error: true
+    # No continue-on-error: a schedule-only run gates nothing, and its failed
+    # conclusion is the drift signal GitHub notifies the operator of.
     strategy:
       fail-fast: false
       matrix:

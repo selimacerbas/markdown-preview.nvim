@@ -35,11 +35,18 @@ local ok, eq, http_get = H.ok, H.eq, H.http_get
 -- H.isolate raises when stdpath does not follow the variables; what it cannot
 -- see is where the plugin writes.
 H.section("Section 0: isolation")
--- joinpath writes / where stdpath keeps Windows's backslashes, so both sides
--- are normalized before the compare.
-local workspace = vim.fs.normalize(mp._workspace_dir or "", { expand_env = false })
-local isolated_cache = vim.fs.normalize(vim.fn.stdpath("cache"), { expand_env = false })
-ok(vim.startswith(workspace, isolated_cache .. "/"), "the plugin's workspace sits under the isolated cache: " .. workspace)
+-- joinpath writes / where stdpath keeps Windows's backslashes, so the
+-- workspace's ancestors are compared through the harness's path contract.
+local workspace = mp._workspace_dir or ""
+local function sits_under(path, dir)
+	for parent in vim.fs.parents(path) do
+		if H.same_path(parent, dir) then
+			return true
+		end
+	end
+	return false
+end
+ok(workspace ~= "" and sits_under(workspace, vim.fn.stdpath("cache")), "the plugin's workspace sits under the isolated cache: " .. workspace)
 local written = {}
 for _, cache in ipairs(startup_caches) do
 	local dir = vim.fs.joinpath(cache, "markdown-preview", vim.fs.basename(workspace))
@@ -82,9 +89,10 @@ ok(mp._token == nil, "_token cleared after stop")
 ok(mp._server_instance == nil, "_server_instance cleared after stop")
 
 -- Refused is curl 7; a socket left bound and silent is curl 28, which a
--- status of 0 alone passed (measured). Give the close a moment. Windows
--- reports a refused loopback connect only after about two seconds of
--- retries, which H.http_get's connect bound waits out, so 7 holds there too.
+-- status of 0 alone passed (measured). Give the close a moment. The first
+-- hosted Windows run read 28 here, taken as its two-second retry of a
+-- refused loopback connect, which H.http_get's connect bound now waits out;
+-- the next Windows run is the measurement of 7 there.
 vim.wait(200, function() return false end)
 r = http_get(("http://127.0.0.1:%d/"):format(port))
 eq(r.curl_exit, 7, "the port refuses connections after stop")

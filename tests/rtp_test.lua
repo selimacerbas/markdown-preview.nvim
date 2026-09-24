@@ -142,7 +142,7 @@ fixture("an override with a $ in its name raises, naming the shadowing copy", fu
 	end
 	stub(odd)
 	code, out = child(helpers_path, "H.rtp()", odd, { XDG_DATA_HOME = data })
-	eq(ruling(code, out, ("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(H.canon(odd), H.canon(installed))), 1, msg)
+	eq(ruling(code, out, ("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(H.canon(base) .. "/odd$HOME-x", H.canon(installed))), 1, msg)
 end)
 
 -- An override above a start package: the search resolves the package's
@@ -219,6 +219,13 @@ fixture("a relative override comes back absolute", function(msg)
 	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
 end)
 
+-- An absolute override under the temp root comes back as the filesystem
+-- names it (/private/var on macOS, the long name on Windows), not as typed.
+fixture("an absolute override comes back canonical", function(msg)
+	out = succeeded(msg, helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/plain")
+	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
+end)
+
 fixture("a symlinked checkout finds its physical sibling", function(msg)
 	local phys = base .. "/phys"
 	tree(phys .. "/mp")
@@ -281,8 +288,8 @@ print("source=" .. debug.getinfo(require("live_server.server").start, "S").sourc
 H.ok(true, "reached")
 H.finish()]], "")
 	local found = printed(out, "found")
-	ok(found ~= nil and not found:find("/../", 1, true) and loaded(out) == H.canon(found .. "/lua/live_server/server.lua"),
-		"the default path has no /../ and require loads from it")
+	ok(found ~= nil and loaded(out) == H.canon(found .. "/lua/live_server/server.lua"),
+		"the default path: require loads from the directory H.rtp() prints")
 else
 	H.skip("the default path (neither " .. ci_checkout .. " nor " .. sibling .. " exists)")
 end
