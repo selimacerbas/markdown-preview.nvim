@@ -1,2 +1,7 @@
 .claude
 .playwright-mcp
+.DS_Store
+doc/tags
+node_modules/
+live-server-rtp/
+nvim.log
