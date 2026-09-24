@@ -2,46 +2,34 @@
 -- End-to-end check that :MarkdownPreview generates a token, threads it into
 -- the served HTML, gates content.md, and that scroll-sync RPC carries it.
 --
--- Run: nvim --headless -c "set rtp+=./live-server-rtp" -c "set rtp+=." \
---          -c "luafile tests/token_auth_test.lua" -c "qa!"
---
--- The CI workflow shims live-server.nvim into ./live-server-rtp before run.
+-- Run: nvim --headless -u NONE -l tests/token_auth_test.lua
+-- live-server.nvim is found by tests/helpers.lua ($LIVE_SERVER_RTP,
+-- ./live-server-rtp, ../live-server.nvim).
 
-local uv = vim.loop
+local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
+local xdg_root = H.isolate()
+H.ok(H.rtp() ~= nil, "live-server.nvim found on one of the three lookup paths")
 
--- ─── Setup: open a markdown buffer ──────────────────────────────────────────
-local tmpdir = vim.fn.tempname()
-vim.fn.mkdir(tmpdir, "p")
+H.section("Section 0: isolation")
+H.ok(vim.fn.stdpath("cache"):find(xdg_root, 1, true) == 1, "stdpath('cache') sits under the temp XDG root")
+
+local tmpdir = H.tmpdir()
 local mdfile = vim.fs.joinpath(tmpdir, "test.md")
-do
-	local fd = uv.fs_open(mdfile, "w", 420)
-	uv.fs_write(fd, "# hello\n\nbody text here.\n", 0)
-	uv.fs_close(fd)
-end
+H.write_file(mdfile, "# hello\n\nbody text here.\n")
 
-vim.cmd("edit " .. mdfile)
+vim.cmd("edit " .. vim.fn.fnameescape(mdfile))
 vim.bo.filetype = "markdown"
 
--- ─── Configure: avoid opening a real browser, force multi mode for isolation
 local mp = require("markdown_preview")
 mp.setup({
 	open_browser = false,
 	instance_mode = "multi",
 })
 
--- ─── Start ──────────────────────────────────────────────────────────────────
+H.section("Section 1: start")
 mp.start()
 
-local passed, failed = 0, 0
-local function ok(cond, msg)
-	if cond then
-		passed = passed + 1
-		print("  PASS: " .. msg)
-	else
-		failed = failed + 1
-		print("  FAIL: " .. msg)
-	end
-end
+local ok, http_get = H.ok, H.http_get
 
 -- Server instance + token must exist
 ok(mp._server_instance ~= nil, "server instance created")
@@ -50,13 +38,6 @@ ok(mp._token:match("^[0-9a-f]+$") ~= nil, "_token is pure hex")
 
 local port = mp._server_instance.port
 ok(type(port) == "number" and port > 0, "server bound to a port")
-
--- ─── HTTP curl helper ───────────────────────────────────────────────────────
-local function http_get(url)
-	local out = vim.fn.system({ "curl", "-s", "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}", url })
-	local body, status = out:match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
-	return { status = tonumber(status), body = body or "" }
-end
 
 -- Static index reachable without token
 local r = http_get(("http://127.0.0.1:%d/"):format(port))
@@ -82,8 +63,4 @@ vim.wait(200, function() return false end)
 r = http_get(("http://127.0.0.1:%d/"):format(port))
 ok(r.status == nil or r.status == 0, "port no longer responds after stop (status=" .. tostring(r.status) .. ")")
 
-print(string.format("\n========================================"))
-print(string.format("Results: %d passed, %d failed", passed, failed))
-print(string.format("========================================"))
-
-if failed > 0 then vim.cmd("cq 1") end
+H.finish()

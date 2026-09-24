@@ -1,0 +1,197 @@
+-- tests/helpers_test.lua
+-- Verify the harness every other suite leans on: the root it resolves, the
+-- XDG move, the bounded curl and the exit code a gate reads.
+--
+-- Run: nvim --headless -u NONE -l tests/helpers_test.lua
+
+local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
+local xdg = H.isolate()
+H.rtp()
+
+local uv = vim.uv or vim.loop
+local ok, eq = H.ok, H.eq
+
+H.section("Section 1: root and isolation")
+ok(vim.fn.isdirectory(H.root .. "/tests") == 1, "H.root is the directory that holds tests/")
+for _, kind in ipairs({ "cache", "data", "state" }) do
+    ok(vim.fn.stdpath(kind):find(xdg, 1, true) == 1, ("stdpath %s sits under the XDG root H.isolate() returned"):format(kind))
+end
+
+H.section("Section 2: bounded curl")
+-- A port the kernel just handed out and took back: almost always refused; if
+-- another listener took the port meanwhile the bounded curl still returns 0 or
+-- a real status, and the assertion reads status 0 only.
+local probe = uv.new_tcp()
+probe:bind("127.0.0.1", 0)
+local released_port = probe:getsockname().port
+probe:close()
+eq(H.http_get(("http://127.0.0.1:%d/"):format(released_port)).status, 0, "a refused connection yields status 0")
+
+-- A listener that completes the handshake and never answers: the bounded
+-- curl must give up on its own, and the helper must report that as 0.
+local hold = uv.new_tcp()
+hold:bind("127.0.0.1", 0)
+hold:listen(1, function() end)
+local t0 = uv.hrtime()
+local stalled = H.http_get(("http://127.0.0.1:%d/"):format(hold:getsockname().port))
+eq(stalled.status, 0, "a stalled server yields status 0")
+eq(stalled.curl_exit, 28, "curl reports its timeout (exit 28)")
+ok((uv.hrtime() - t0) / 1e9 < 8, "the stalled request returned within the bound")
+hold:close()
+
+-- A one-shot peer that records the request line and answers with reply byte
+-- for byte, so each case controls exactly what curl sees.
+local function peer(reply)
+    local seen = {}
+    local srv = uv.new_tcp()
+    srv:bind("127.0.0.1", 0)
+    srv:listen(8, function()
+        local c = uv.new_tcp()
+        srv:accept(c)
+        local buf = ""
+        c:read_start(function(err, data)
+            if err or not data then
+                c:close()
+                return
+            end
+            buf = buf .. data
+            if not seen.line and buf:find("\r\n\r\n", 1, true) then
+                seen.line = buf:match("^[^\r\n]*")
+                c:read_stop()
+                c:write(reply, function()
+                    c:shutdown(function() c:close() end)
+                end)
+            end
+        end)
+    end)
+    return srv, srv:getsockname().port, seen
+end
+
+local srv, port, seen = peer("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc")
+local short = H.http_get(("http://127.0.0.1:%d/"):format(port))
+eq(short.status, 0, "a body shorter than its Content-Length yields status 0")
+eq(short.curl_exit, 18, "curl reports the partial transfer (exit 18)")
+srv:close()
+
+-- The proxy points at port 9, so a request that honoured it never reaches the peer.
+local saved_proxy = vim.env.http_proxy
+vim.env.http_proxy = "http://127.0.0.1:9"
+srv, port = peer("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+local direct = H.http_get(("http://127.0.0.1:%d/"):format(port))
+vim.env.http_proxy = saved_proxy
+eq(direct.status, 204, "http_proxy in the environment does not reroute loopback")
+srv:close()
+
+srv, port, seen = peer("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+H.http_get(("http://127.0.0.1:%d/./x"):format(port))
+eq(seen.line, "GET /./x HTTP/1.1", "dot segments reach the server as written")
+srv:close()
+
+H.section("Section 3: the exit code is the ruling")
+-- Each case runs in a child of the same binary, since its cq would end this
+-- suite too; progpath keeps the child on the version under test. A parse
+-- error exits 1 as well (measured), so a case also names the line (a Lua
+-- pattern) only its own path prints, and a child without it reports that
+-- instead of its code. The bound turns a child that hangs into a failed case
+-- instead of a stalled suite; vim.system reports that timeout as exit 124.
+local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
+local CHILD_TIMEOUT_MS = 30000
+local function child_exit(body, expect)
+    local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
+    H.write_file(path, ("local H = dofile(%q)\n%s\n"):format(helpers_path, body))
+    local r = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-l", path }, { timeout = CHILD_TIMEOUT_MS }):wait()
+    if r.code == 124 then
+        return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
+    end
+    if not ((r.stdout or "") .. (r.stderr or "")):find(expect) then
+        return ("exit %d without %q"):format(r.code, expect)
+    end
+    return r.code
+end
+eq(child_exit('H.ok(false, "deliberate")\nH.finish()', "FAIL: deliberate"), 1, "a failed assertion exits 1")
+-- Through H.ok, so a broken H.eq cannot vouch for itself.
+ok(child_exit('H.eq(1, 2, "x")\nH.finish()', "FAIL: x %(got 1, want 2%)") == 1, "a failed H.eq exits 1")
+eq(child_exit("H.finish()", "No assertion ran"), 1, "a suite with no assertion exits 1")
+eq(child_exit('H.ok(true, "x")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped"), 0, "one passing assertion exits 0")
+eq(child_exit('H.ok(true, "x")\nH.skip("y")\nH.finish()', "Results: 1 passed, 0 failed, 1 skipped"), 0, "a skip is counted and fails nothing")
+eq(child_exit('H.skip("y")\nH.finish()', "Results: 0 passed, 0 failed, 1 skipped"), 1, "a suite that only skipped exits 1")
+eq(child_exit('H.ok(false, "deliberate")', "suite ended without H%.finish%(%)"), 1, "a failed assertion without H.finish() exits 1")
+eq(child_exit('H.ok(true, "x")', "suite ended without H%.finish%(%)"), 1, "a passing suite that never calls H.finish() exits 1")
+eq(child_exit('H.ok(true, "x")\nH.finish()\nH.ok(true, "late")', "H%.ok after H%.finish%(%)"), 1, "an assertion after H.finish() exits 1")
+eq(child_exit('H.ok(false, "deliberate")\nos.exit(0)', "suite ended without H%.finish%(%)"), 1, "a failed assertion then os.exit(0) exits 1")
+eq(child_exit('H.ok(true, "x")\nH.finish()\nos.exit(3)', "Results: 1 passed, 0 failed, 0 skipped"), 3, "os.exit after a passing H.finish() keeps its code")
+-- From a timer callback (a fast event) the ruling cannot drain the loop. Each
+-- body ends in a line that fails the case if the timer never fired.
+eq(child_exit([[
+H.ok(true, "x")
+H.finish()
+local uv = vim.uv or vim.loop
+uv.new_timer():start(10, 0, function() os.exit(0) end)
+vim.wait(1000, function() return false end)
+os.exit(5)]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "os.exit(0) from a callback after a passing H.finish() exits 0")
+eq(child_exit([[
+H.ok(false, "deliberate")
+local uv = vim.uv or vim.loop
+uv.new_timer():start(10, 0, function() os.exit(0) end)
+vim.wait(1000, function() return false end)
+H.finish()]], "\nsuite ended without H%.finish%(%)\n"), 1, "os.exit(0) from a callback in an unfinished suite exits 1 with the message on its own line")
+
+H.section("Section 4: an error raised in a callback fails the suite")
+eq(child_exit([[
+local uv = vim.uv or vim.loop
+uv.new_timer():start(10, 0, function() error("luv boom") end)
+vim.wait(200, function() return false end)
+H.ok(true, "the assertions pass")
+H.finish()]], "FAIL: error reported: [^\n]*luv boom"), 1, "an error in a timer callback exits 1")
+eq(child_exit([[
+vim.schedule(function() error("sched boom") end)
+H.ok(true, "the assertions pass")
+H.finish()]], "FAIL: error reported: [^\n]*sched boom"), 1, "an error in a vim.schedule callback exits 1")
+-- The read callback raises while the suite is blocked in vim.fn.system, the
+-- window where every server handler runs.
+eq(child_exit([[
+local uv = vim.uv or vim.loop
+local srv = uv.new_tcp()
+srv:bind("127.0.0.1", 0)
+srv:listen(8, function()
+    local c = uv.new_tcp()
+    srv:accept(c)
+    c:read_start(function()
+        c:read_stop()
+        c:write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok", function() c:close() end)
+        error("tcp boom")
+    end)
+end)
+H.eq(H.http_get(("http://127.0.0.1:%d/"):format(srv:getsockname().port)).status, 200, "the response arrived")
+H.finish()]], "FAIL: error reported: [^\n]*tcp boom"), 1, "an error in a tcp read callback during vim.fn.system exits 1")
+eq(child_exit([[
+H.ok(true, "the assertions pass")
+H.finish()
+vim.schedule(function() error("late boom") end)]], "error reported after H%.finish%(%): [^\n]*late boom"), 1, "an error raised after a passing H.finish() exits 1")
+
+H.section("Section 5: H.expect_error consumes only the message it expects")
+eq(child_exit([[
+H.ok(H.expect_error("expected boom", function() vim.notify("expected boom", vim.log.levels.ERROR) end), "the expected error was consumed")
+H.finish()]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "an expected error notification is consumed")
+eq(child_exit([[
+H.expect_error("expected boom", function() error("other boom") end)
+H.ok(true, "never reached")
+H.finish()]], "E5113[^\n]*other boom"), 1, "an error fn raises is not swallowed")
+eq(child_exit([[
+H.ok(not H.expect_error("expected boom", function() vim.notify("other boom", vim.log.levels.ERROR) end), "a different message is not consumed")
+H.finish()]], "Results: 1 passed, 1 failed"), 1, "a different error message stays for the ledger")
+eq(child_exit('H.ok(not H.expect_error("x", function() end), "no error reported gives false")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped"), 0, "no error reported gives false")
+eq(child_exit([[
+H.ok(H.expect_error("expected boom", function()
+    vim.schedule(function() vim.notify("expected boom", vim.log.levels.ERROR) end)
+end), "the expected error was consumed")
+H.finish()]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "an expected error reported through a callback is seen")
+-- The scheduled error already sits in v:errmsg when fn runs, so without the
+-- sample first fn's own message would overwrite it.
+eq(child_exit([[
+vim.schedule(function() error("sched boom") end)
+vim.wait(20, function() return false end)
+H.ok(H.expect_error("expected boom", function() vim.notify("expected boom", vim.log.levels.ERROR) end), "the expected error was consumed")
+H.finish()]], "FAIL: error reported: [^\n]*sched boom"), 1, "a callback error pending before H.expect_error still fails the suite")
+
+H.finish()
