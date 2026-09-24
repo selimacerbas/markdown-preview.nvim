@@ -115,15 +115,16 @@ H.section("Section 3: the exit code is the ruling")
 -- pattern) only its own path prints, and a child without it reports that
 -- instead of its code. The bound turns a child that hangs into a failed case
 -- instead of a stalled suite; vim.system reports that timeout as exit 124.
--- opts.env adds to the child's environment; opts.helpers loads another copy
--- of the helper.
+-- opts.env adds to the child's environment, opts.helpers loads another copy
+-- of the helper, opts.prelude runs before the helper loads and opts.cwd is
+-- the child's working directory.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child_exit(body, expect, opts)
     opts = opts or {}
     local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
-    H.write_file(path, ("local H = dofile(%q)\n%s\n"):format(opts.helpers or helpers_path, body))
-    local r = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-l", path }, { env = opts.env, timeout = CHILD_TIMEOUT_MS }):wait()
+    H.write_file(path, ("%slocal H = dofile(%q)\n%s\n"):format(opts.prelude or "", opts.helpers or helpers_path, body))
+    local r = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-l", path }, { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }):wait()
     if r.code == 124 then
         return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
     end
@@ -216,6 +217,15 @@ H.ok(false, "deliberate")
 vim.keymap.set("n", "x", function() H.finish() return "" end, { expr = true })
 vim.api.nvim_feedkeys("x", "x", false)]], "cq refused", { env = { TMPDIR = tmp } }), 1, "a refused cq under isolation exits 1")
 eq(leftovers(tmp), "", "a refused cq leaves no tempdir behind")
+-- tempname() returns "" when Neovim has no tempdir, and the parent of "" is
+-- ".", so a cleanup that derived its target at exit emptied the working
+-- directory. A TMPDIR that is a file cannot force it (Neovim falls back to
+-- /tmp, measured), so the prelude stands in for a Neovim without one.
+local cwd = H.tmpdir()
+H.write_file(cwd .. "/sentinel", "keep")
+eq(child_exit('H.ok(false, "red")', "suite ended without H%.finish%(%)",
+    { prelude = 'vim.fn.tempname = function() return "" end\n', cwd = cwd }), 1, "an unfinished red suite without a tempdir exits 1")
+eq(vim.fn.filereadable(cwd .. "/sentinel"), 1, "an exit without a tempdir leaves the working directory alone")
 
 H.section("Section 4: an error raised in a callback fails the suite")
 eq(child_exit([[

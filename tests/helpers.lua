@@ -43,24 +43,49 @@ function H.isolate()
     return root
 end
 
--- The runtimepath reads an entry at search time: a comma splits it, a $VAR
--- expands and a glob character matches, so the directory a suite prepends is
--- not always the one require searches, and a copy on the startup packpath
--- answers instead (measured). Only the file the search
--- resolves proves the entry. Returns nil when rel resolves under dir, else
--- what the search found in its place.
-local function resolved_elsewhere(dir, rel)
-    local hit = vim.api.nvim_get_runtime_file(rel, false)[1]
-    local want = vim.fs.normalize(dir .. "/" .. rel, { expand_env = false })
-    if hit and vim.fs.normalize(hit, { expand_env = false }) == want then
-        return nil
+-- The two files a module can be, in the order Neovim's loader tries them.
+local function module_forms(modname)
+    local rel = modname:gsub("%.", "/")
+    return { "/lua/" .. rel .. ".lua", "/lua/" .. rel .. "/init.lua" }
+end
+
+-- The file require would load for modname, found the way the loader finds
+-- it: runtimepath entries in order, and in each lua/<mod>.lua before
+-- lua/<mod>/init.lua, so a flat file in an earlier entry wins (measured).
+-- The entries are the search path Neovim built, after it split, expanded
+-- and globbed the option.
+local function first_hit(modname)
+    for _, entry in ipairs(vim.api.nvim_list_runtime_paths()) do
+        for _, form in ipairs(module_forms(modname)) do
+            if uv.fs_stat(entry .. form) then
+                return vim.fs.normalize(entry .. form, { expand_env = false })
+            end
+        end
     end
-    return tostring(hit)
+end
+
+-- The runtimepath reads an entry at search time: a comma splits it, a $VAR
+-- expands and a glob character matches, and an earlier entry answers first,
+-- so the directory a suite prepends is not always the one require loads from
+-- and a copy on the startup packpath answers instead (measured). Raises,
+-- naming what require would load, unless modname resolves to root's own file.
+local function prove_module(root, modname, label, reason)
+    local own
+    for _, form in ipairs(module_forms(modname)) do
+        if uv.fs_stat(root .. form) then
+            own = vim.fs.normalize(root .. form, { expand_env = false })
+            break
+        end
+    end
+    local hit = first_hit(modname)
+    if not own or hit ~= own then
+        error(("%s at %s does not resolve: %s (%s)"):format(label, root, tostring(hit), reason), 2)
+    end
 end
 
 -- The checkout goes first on the runtimepath and proves it is the copy
 -- require loads. This file is live-server.nvim's verbatim except here: it
--- proves this plugin's entry file and then finds live-server as a dependency.
+-- proves this plugin's modules and then finds live-server as a dependency.
 -- live-server.nvim is found from $LIVE_SERVER_RTP, ./live-server-rtp (the CI
 -- checkout) or the checkout's sibling live-server.nvim (the developer's
 -- clone); the first that exists wins and is printed, so a stale
@@ -70,10 +95,22 @@ end
 -- whatever live-server the startup runtimepath or packpath carries.
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
-    local elsewhere = resolved_elsewhere(H.root, "lua/markdown_preview/init.lua")
-    if elsewhere then
-        error(("the checkout at %s does not resolve: %s (a name the runtimepath reads differently: a comma, a dollar sign, a glob character)"):format(H.root, elsewhere))
+    -- Every module the checkout ships, since a copy elsewhere can shadow any
+    -- one of them; vim.fs.dir reads H.root literally, where glob() would
+    -- read a glob character in it.
+    local modules = { "markdown_preview" }
+    for name, kind in vim.fs.dir(H.root .. "/lua/markdown_preview") do
+        local base = name:match("^(.+)%.lua$")
+        if kind == "file" and base and base ~= "init" then
+            table.insert(modules, "markdown_preview." .. base)
+        end
     end
+    local function prove_root(reason)
+        for _, modname in ipairs(modules) do
+            prove_module(H.root, modname, "the checkout", reason)
+        end
+    end
+    prove_root("a name the runtimepath reads differently: a comma, a dollar sign, a glob character")
     -- Built one by one: a nil first element would end ipairs before the
     -- fallbacks, so an unset LIVE_SERVER_RTP would find nothing.
     local candidates = {}
@@ -100,19 +137,14 @@ function H.rtp()
             dir = vim.fs.normalize(vim.fn.fnamemodify(dir, ":p"), { expand_env = false })
             vim.opt.runtimepath:prepend(dir)
             -- The plugin requires both modules and server.lua requires util.
-            for _, rel in ipairs({ "lua/live_server/server.lua", "lua/live_server/util.lua" }) do
-                elsewhere = resolved_elsewhere(dir, rel)
-                if elsewhere then
-                    error(("live-server.nvim at %s does not resolve: %s (a directory without lua/live_server/server.lua and util.lua, or a name the runtimepath reads differently (a comma, a dollar sign, a glob character))"):format(dir, elsewhere))
-                end
+            for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
+                prove_module(dir, modname, "live-server.nvim", "a directory without lua/live_server/server.lua and util.lua, or a name the runtimepath reads differently (a comma, a dollar sign, a glob character)")
             end
             -- The prepend puts dir before the checkout, so a directory that
-            -- also carries this plugin's modules answered require instead
-            -- while every proof above passed (measured): prove the root again.
-            elsewhere = resolved_elsewhere(H.root, "lua/markdown_preview/init.lua")
-            if elsewhere then
-                error(("the checkout at %s does not resolve: %s (live-server.nvim at %s carries this plugin's modules too)"):format(H.root, elsewhere, dir))
-            end
+            -- also carries this plugin's modules, in either file form,
+            -- answered require instead while every proof above passed
+            -- (measured): prove the root again.
+            prove_root(("live-server.nvim at %s carries this plugin's modules too"):format(dir))
             print("live-server.nvim: " .. dir)
             return dir
         end
@@ -235,9 +267,22 @@ end
 
 -- real_exit skips Neovim's teardown, which removes its per-process tempdir
 -- and H.isolate's XDG tree inside it (one left per unfinished red child on
--- 0.10 and 0.12, measured); tempname() creates that dir on demand if absent.
+-- 0.10 and 0.12, measured). The dir is resolved once, at load, and kept only
+-- when absolute and present: tempname() returns "" when Neovim has no
+-- tempdir, and the parent of "" is ".", which delete(.., "rf") would empty.
+local tempdir
+do
+    local name = vim.fn.tempname()
+    local dir = name ~= "" and vim.fn.fnamemodify(name, ":h") or ""
+    local absolute = dir:sub(1, 1) == "/" or dir:match("^%a:[/\\]") ~= nil
+    if absolute and vim.fn.isdirectory(dir) == 1 then
+        tempdir = dir
+    end
+end
 local function cleanup()
-    vim.fn.delete(vim.fn.fnamemodify(vim.fn.tempname(), ":h"), "rf")
+    if tempdir then
+        vim.fn.delete(tempdir, "rf")
+    end
 end
 
 -- Every exit the helper makes itself: output flushed, the tempdir removed.

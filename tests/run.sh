@@ -29,8 +29,9 @@ fail=0
 for t in tests/*_test.lua; do
     [ -n "${GITHUB_ACTIONS:-}" ] && printf '::group::%s\n' "$t"
     # tee shows the output as it comes; a POSIX pipeline reports only its
-    # last command's status, so Neovim's travels through a file.
-    { nvim --headless -u NONE -l "$t" 2>&1; echo "$?" >"$run/rc"; } | tee "$run/out"
+    # last command's status, so Neovim's travels through a file, and tee's
+    # own status counts too: a capture that failed must not pass the gate.
+    { nvim --headless -u NONE -l "$t" 2>&1; echo "$?" >"$run/rc"; } | tee "$run/out" || fail=1
     [ "$(cat "$run/rc")" = 0 ] || fail=1
     if ! grep -q '^Results: ' "$run/out"; then
         printf '%s printed no Results line: a suite that never calls H.finish() rules nothing\n' "$t"
