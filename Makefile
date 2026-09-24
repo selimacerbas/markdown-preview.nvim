@@ -1,3 +1,3 @@
 .PHONY: test
-test: ## Run every headless suite and the help-tags check (tests/run.sh)
+test: ## Run every headless suite; the help-tags check runs when doc/ exists (tests/run.sh)
 	bash tests/run.sh

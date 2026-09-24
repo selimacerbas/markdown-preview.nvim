@@ -1,6 +1,6 @@
 -- tests/token_auth_test.lua
 -- End-to-end check that :MarkdownPreview generates a token, threads it into
--- the served HTML, gates content.md, and that scroll-sync RPC carries it.
+-- the served HTML and gates content.md.
 --
 -- Run: nvim --headless -u NONE -l tests/token_auth_test.lua
 -- live-server.nvim is found by tests/helpers.lua ($LIVE_SERVER_RTP,
@@ -21,6 +21,7 @@ vim.cmd("edit " .. vim.fn.fnameescape(mdfile))
 vim.bo.filetype = "markdown"
 
 local mp = require("markdown_preview")
+-- multi mode so the suite never touches the takeover lock or the shared port
 mp.setup({
 	open_browser = false,
 	instance_mode = "multi",
@@ -53,7 +54,7 @@ r = http_get(("http://127.0.0.1:%d/content.md?t=%s"):format(port, mp._token))
 ok(r.status == 200, "/content.md with correct token is 200")
 ok(r.body:find("hello") ~= nil, "/content.md body contains buffer text")
 
--- ─── Stop and verify cleanup ────────────────────────────────────────────────
+H.section("Section 2: stop and verify cleanup")
 mp.stop()
 ok(mp._token == nil, "_token cleared after stop")
 ok(mp._server_instance == nil, "_server_instance cleared after stop")
@@ -61,6 +62,6 @@ ok(mp._server_instance == nil, "_server_instance cleared after stop")
 -- Port no longer accepts connections (give it a moment)
 vim.wait(200, function() return false end)
 r = http_get(("http://127.0.0.1:%d/"):format(port))
-ok(r.status == nil or r.status == 0, "port no longer responds after stop (status=" .. tostring(r.status) .. ")")
+ok(r.status == 0, "port no longer responds after stop (status=" .. tostring(r.status) .. ")")
 
 H.finish()
