@@ -1,0 +1,4 @@
+# LF in every checkout: StyLua and .editorconfig pin LF, and a CRLF checkout
+# (Git for Windows with autocrlf) reds make fmt-check on every Lua file.
+* text=auto eol=lf
+*.lua text eol=lf

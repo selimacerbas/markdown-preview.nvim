@@ -1,0 +1,45 @@
+name: nightly
+
+# Drift detection against Neovim nightly and live-server.nvim main. It runs
+# on the cron and by hand only, apart from ci.yml, so no push or PR carries a
+# check for it and a red here is this run's own red, never a merge block.
+on:
+  schedule:
+    # Weekly. In a public repository GitHub disables a scheduled workflow
+    # after 60 days without a commit; re-enable it from the Actions tab (or
+    # gh workflow enable nightly) when that happens.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: nightly (${{ matrix.os }}, live-server main)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    # No continue-on-error: a scheduled run's red is the notification.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: main
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: nightly
+      - name: Version
+        run: nvim --version | head -n 3
+      - name: Headless tests
+        run: bash tests/run.sh

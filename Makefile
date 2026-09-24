@@ -1,15 +1,49 @@
-# .github/workflows/ci.yml's format job names the same version; the two move together.
+# The one StyLua pin: CI's format job runs make fmt-check, so no second copy
+# of the version exists to drift from this one.
 STYLUA_VERSION := 2.5.2
+STYLUA := bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION)
 
-.PHONY: help test fmt fmt-check
+.PHONY: help test fmt fmt-check lint-text lint-blame
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## / : /'
 
 test: ## Run every headless suite; the help-tags check runs when doc/ exists (tests/run.sh)
 	bash tests/run.sh
 
-fmt: ## Format every Lua file with the pinned StyLua
-	bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION) lua plugin tests
+# Tracked Lua files only, so an untracked directory (a live-server-rtp/
+# checkout, node_modules/) never enters. StyLua exits 0 when it is handed no
+# file, so an empty list fails here instead.
+fmt: ## Format every tracked Lua file with the pinned StyLua
+	@[ -n "$$(git ls-files -- '*.lua')" ] || { echo 'fmt: git lists no tracked Lua file' >&2; exit 1; }
+	git ls-files -z -- '*.lua' | xargs -0 $(STYLUA)
 
-fmt-check: ## Fail when a Lua file is not formatted (what the CI format job checks)
-	bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION) --check lua plugin tests
+fmt-check: ## Fail when a tracked Lua file is not formatted (the CI format job runs this)
+	@[ -n "$$(git ls-files -- '*.lua')" ] || { echo 'fmt-check: git lists no tracked Lua file' >&2; exit 1; }
+	@git ls-files -z -- '*.lua' | xargs -0 $(STYLUA) --check || { echo 'run make fmt to format' >&2; exit 1; }
+
+# The character is built by printf, since make runs recipes under /bin/sh
+# (dash on Ubuntu, which reads $'...' as literal text) and this file must not
+# carry it. git grep searches the tracked files and keeps "none found" (1)
+# apart from a failure (2 and up), which a grep under xargs folds together.
+# README.md, CLAUDE.md and doc/ are the docs sweep's; drop them from the
+# exclusion when it lands.
+lint-text: ## Refuse the em dash character in code, product copy and configuration
+	@dash=$$(printf '\342\200\224'); \
+	git grep -l -F -e "$$dash" -- . ':!README.md' ':!CLAUDE.md' ':!doc/'; rc=$$?; \
+	if [ $$rc -eq 0 ]; then echo 'lint-text: the files above carry the em dash character' >&2; exit 1; fi; \
+	if [ $$rc -ne 1 ]; then echo "lint-text: git grep failed (exit $$rc)" >&2; exit 1; fi
+
+# git blame skips an entry that names no commit without a word, so a rebase
+# that rewrote the format commit would leave the file ignoring nothing. Each
+# entry must be a full commit name HEAD contains.
+lint-blame: ## Fail when .git-blame-ignore-revs names a commit HEAD does not contain
+	@n=0; \
+	while read -r sha rest; do \
+		case "$$sha" in ''|'#'*) continue ;; esac; \
+		if [ "$$(git rev-parse --verify --quiet "$$sha^{commit}")" != "$$sha" ] \
+			|| ! git merge-base --is-ancestor "$$sha" HEAD; then \
+			echo "lint-blame: $$sha is not a full commit name HEAD contains" >&2; exit 1; \
+		fi; \
+		n=$$((n + 1)); \
+	done < .git-blame-ignore-revs; \
+	[ $$n -gt 0 ] || { echo 'lint-blame: .git-blame-ignore-revs names no commit' >&2; exit 1; }
