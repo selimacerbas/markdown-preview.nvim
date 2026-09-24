@@ -87,6 +87,11 @@ H.http_get(("http://127.0.0.1:%d/./x"):format(port))
 eq(seen.line, "GET /./x HTTP/1.1", "dot segments reach the server as written")
 srv:close()
 
+-- vim.fn.system mapped NUL to SOH (measured); the body is compared byte for byte.
+srv, port = peer("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nA\0B")
+eq(H.http_get(("http://127.0.0.1:%d/"):format(port)).body, "A\0B", "a NUL byte in the body comes back intact")
+srv:close()
+
 H.section("Section 3: the exit code is the ruling")
 -- Each case runs in a child of the same binary, since its cq would end this
 -- suite too; progpath keeps the child on the version under test. A parse
@@ -135,6 +140,22 @@ local uv = vim.uv or vim.loop
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
 H.finish()]], "\nsuite ended without H%.finish%(%)\n"), 1, "os.exit(0) from a callback in an unfinished suite exits 1 with the message on its own line")
+-- A quit a callback still holds when the main chunk ends runs during Neovim's
+-- teardown, after the ruling, and set the exit code again (measured).
+eq(child_exit([[
+H.ok(true, "sync ok")
+vim.schedule(function()
+    H.ok(false, "async result is red")
+    vim.cmd("qa!")
+end)]], "suite ended without H%.finish%(%)"), 1, "a qa! a pending callback runs after the ruling still exits 1")
+eq(child_exit([[
+H.ok(false, "deliberate")
+vim.schedule(function() vim.cmd("cq 0") end)]], "suite ended without H%.finish%(%)"), 1, "a cq 0 a pending callback runs after the ruling still exits 1")
+-- Under textlock (an expr mapping) cq raises E565 instead of ending the run.
+eq(child_exit([[
+H.ok(false, "deliberate")
+vim.keymap.set("n", "x", function() H.finish() return "" end, { expr = true })
+vim.api.nvim_feedkeys("x", "x", false)]], "cq refused: [^\n]*E565"), 1, "a failing H.finish() whose cq is refused exits 1")
 
 H.section("Section 4: an error raised in a callback fails the suite")
 eq(child_exit([[
@@ -147,8 +168,8 @@ eq(child_exit([[
 vim.schedule(function() error("sched boom") end)
 H.ok(true, "the assertions pass")
 H.finish()]], "FAIL: error reported: [^\n]*sched boom"), 1, "an error in a vim.schedule callback exits 1")
--- The read callback raises while the suite is blocked in vim.fn.system, the
--- window where every server handler runs.
+-- The read callback raises while the suite waits in H.http_get, the window
+-- where every server handler runs.
 eq(child_exit([[
 local uv = vim.uv or vim.loop
 local srv = uv.new_tcp()
@@ -163,11 +184,23 @@ srv:listen(8, function()
     end)
 end)
 H.eq(H.http_get(("http://127.0.0.1:%d/"):format(srv:getsockname().port)).status, 200, "the response arrived")
-H.finish()]], "FAIL: error reported: [^\n]*tcp boom"), 1, "an error in a tcp read callback during vim.fn.system exits 1")
+H.finish()]], "FAIL: error reported: [^\n]*tcp boom"), 1, "an error in a tcp read callback during H.http_get exits 1")
 eq(child_exit([[
 H.ok(true, "the assertions pass")
 H.finish()
 vim.schedule(function() error("late boom") end)]], "error reported after H%.finish%(%): [^\n]*late boom"), 1, "an error raised after a passing H.finish() exits 1")
+-- The ruling runs outside the timer, so the late error is seen; the marker
+-- goes to stdout, so the case fails if the timer never fired.
+eq(child_exit([[
+H.ok(true, "x")
+H.finish()
+vim.schedule(function() error("late") end)
+local uv = vim.uv or vim.loop
+uv.new_timer():start(50, 0, function()
+    io.stdout:write("timer fired\n")
+    os.exit(0)
+end)
+vim.wait(1000, function() return false end)]], "timer fired.*error reported after H%.finish%(%): [^\n]*late"), 1, "a late callback error then os.exit(0) from a callback exits 1")
 
 H.section("Section 5: H.expect_error consumes only the message it expects")
 eq(child_exit([[

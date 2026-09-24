@@ -12,16 +12,21 @@ local verdict
 local errors = {}
 local tests_dir = vim.fs.dirname(debug.getinfo(1, "S").source:sub(2))
 
+-- os.exit as Neovim provides it, taken before the wrapper at the end of this
+-- file replaces it: a ruling that must end the run calls it directly.
+local real_exit = os.exit
+
 -- The repository root is the parent of tests/, whatever the current
 -- directory; tests build plugin paths from it.
 H.root = vim.fn.fnamemodify(tests_dir, ":p:h:h")
 
 -- A fresh XDG tree per run: stdpath() reads the variables at call time
 -- (measured on 0.12.5), so cache, data and state move for everything created
--- after this call. The startup log is opened before any script runs and stays
--- in the state dir Neovim started with; a runner that must isolate it sets
--- XDG_STATE_HOME in the environment. The check turns a Neovim that cached the
--- paths at startup into a loud failure instead of writes into the real tree.
+-- after this call. The startup log is opened, and the runtimepath built from
+-- the config and data dirs, before any script runs; a runner that must
+-- isolate those sets the XDG variables in the environment (tests/run.sh
+-- does). The check turns a Neovim that cached the paths at startup into a
+-- loud failure instead of writes into the real tree.
 function H.isolate()
     local root = vim.fn.tempname()
     vim.fn.mkdir(root, "p")
@@ -36,14 +41,37 @@ function H.isolate()
     return root
 end
 
--- live-server.nvim, the dependency, is found from $LIVE_SERVER_RTP,
--- ./live-server-rtp (the CI checkout) or ../live-server.nvim (the sibling
--- clone); the first that exists wins. A set override that is not a directory
--- raises, and so does finding none or a directory the search does not resolve
--- to: falling through would let require load whatever live-server the startup
--- runtimepath or packpath carries.
+-- The runtimepath reads an entry at search time: a comma splits it, a $VAR
+-- expands and a glob character matches, so the directory a suite prepends is
+-- not always the one require searches, and a copy on the startup packpath
+-- answers instead (measured). Only the file the search
+-- resolves proves the entry. Returns nil when rel resolves under dir, else
+-- what the search found in its place.
+local function resolved_elsewhere(dir, rel)
+    local hit = vim.api.nvim_get_runtime_file(rel, false)[1]
+    local want = vim.fs.normalize(dir .. "/" .. rel, { expand_env = false })
+    if hit and vim.fs.normalize(hit, { expand_env = false }) == want then
+        return nil
+    end
+    return tostring(hit)
+end
+
+-- The checkout goes first on the runtimepath and proves it is the copy
+-- require loads. This file is live-server.nvim's verbatim except here: it
+-- proves this plugin's entry file and then finds live-server as a dependency.
+-- live-server.nvim is found from $LIVE_SERVER_RTP, ./live-server-rtp (the CI
+-- checkout) or the checkout's sibling live-server.nvim (the developer's
+-- clone); the first that exists wins and is printed, so a stale
+-- ./live-server-rtp shows in every run. A set override that is not a
+-- directory raises, and so does finding none or a directory whose modules
+-- the search does not resolve to: falling through would let require load
+-- whatever live-server the startup runtimepath or packpath carries.
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
+    local elsewhere = resolved_elsewhere(H.root, "lua/markdown_preview/init.lua")
+    if elsewhere then
+        error(("the checkout at %s does not resolve: %s (a name the runtimepath reads differently: a comma, a dollar sign, a glob character)"):format(H.root, elsewhere))
+    end
     -- Built one by one: a nil first element would end ipairs before the
     -- fallbacks, so an unset LIVE_SERVER_RTP would find nothing.
     local candidates = {}
@@ -54,26 +82,33 @@ function H.rtp()
         end
         table.insert(candidates, path)
     end
-    table.insert(candidates, H.root .. "/live-server-rtp")
-    table.insert(candidates, H.root .. "/../live-server.nvim")
+    local ci_checkout = H.root .. "/live-server-rtp"
+    -- The physical checkout's sibling: through a symlinked checkout the
+    -- kernel resolves ".." from the link's target, where normalize would
+    -- resolve it from the link's name.
+    local sibling = vim.fs.dirname(uv.fs_realpath(H.root) or H.root) .. "/live-server.nvim"
+    table.insert(candidates, ci_checkout)
+    table.insert(candidates, sibling)
     for _, dir in ipairs(candidates) do
         if vim.fn.isdirectory(dir) == 1 then
-            -- The sibling candidate carries a ".." segment no caller should
-            -- see; the name was checked literally, so it is not expanded here.
-            dir = vim.fs.normalize(dir, { expand_env = false })
+            -- Absolute, so a relative override does not follow a later
+            -- directory change; fnamemodify resolves a .. through the
+            -- filesystem, as the check above read it (measured), and the
+            -- name was checked literally, so it is not expanded here.
+            dir = vim.fs.normalize(vim.fn.fnamemodify(dir, ":p"), { expand_env = false })
             vim.opt.runtimepath:prepend(dir)
-            -- The runtimepath interprets an entry at search time ($VAR, a
-            -- comma, a glob), so the string checked above is not the entry
-            -- require sees, and an empty directory passes that check; only
-            -- the file the search resolves proves the entry (measured).
-            local hit = vim.api.nvim_get_runtime_file("lua/live_server/server.lua", false)[1]
-            if not (hit and vim.startswith(vim.fs.normalize(hit, { expand_env = false }), dir .. "/")) then
-                error("live-server.nvim at " .. dir .. " does not resolve: " .. tostring(hit) .. " (a name with $, a comma or a glob character, or an empty directory)")
+            -- The plugin requires both modules and server.lua requires util.
+            for _, rel in ipairs({ "lua/live_server/server.lua", "lua/live_server/util.lua" }) do
+                elsewhere = resolved_elsewhere(dir, rel)
+                if elsewhere then
+                    error(("live-server.nvim at %s does not resolve: %s (a directory without lua/live_server/server.lua and util.lua, or a name the runtimepath reads differently (a comma, a dollar sign, a glob character))"):format(dir, elsewhere))
+                end
             end
+            print("live-server.nvim: " .. dir)
             return dir
         end
     end
-    error("live-server.nvim not found: set LIVE_SERVER_RTP, or check it out at ./live-server-rtp or ../live-server.nvim")
+    error(("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (v1.5.0 or newer) to %s or %s, or set LIVE_SERVER_RTP to a checkout"):format(ci_checkout, sibling))
 end
 
 function H.tmpdir()
@@ -93,13 +128,15 @@ end
 -- globbing, --path-as-is sends dot segments as written so the server, not
 -- curl, resolves them, and --noproxy keeps a developer's http_proxy off
 -- loopback. The bound turns a firewall that swallows SYNs or a peer that never
--- answers into a failed assertion instead of a hung suite.
+-- answers into a failed assertion instead of a hung suite; vim.system's
+-- timeout is a second bound should curl's own fail (it reports exit 124).
 -- status is 0 whenever curl itself reports failure (refused, timed out, a body
 -- shorter than its Content-Length: curl exit 18) and curl_exit carries curl's
 -- code; a peer that sends a status line and closes is a 200 with an empty body
--- by curl's rules, so a test that needs the body asserts on it. vim.fn.system
--- maps NUL bytes to SOH in the body, so a binary payload is compared by length
--- or through a file, never byte for byte through this helper.
+-- by curl's rules, so a test that needs the body asserts on it. vim.system
+-- returns the body byte for byte, where vim.fn.system mapped NUL to SOH, and
+-- a SIGINT during its wait ends the suite, where vim.fn.system left a Neovim
+-- that ignored INT and TERM (measured on 0.12.5).
 function H.http_get(url, headers)
     local cmd = { "curl", "-q", "-g", "--path-as-is", "--noproxy", "*", "-s", "--max-time", "5", "--connect-timeout", "2", "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}" }
     for _, h in ipairs(headers or {}) do
@@ -107,9 +144,9 @@ function H.http_get(url, headers)
         table.insert(cmd, h)
     end
     table.insert(cmd, url)
-    local out = vim.fn.system(cmd)
-    local curl_exit = vim.v.shell_error
-    local body, status = out:match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
+    local result = vim.system(cmd, { text = false, timeout = 8000 }):wait()
+    local curl_exit = result.code
+    local body, status = (result.stdout or ""):match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
     if curl_exit ~= 0 then
         return { status = 0, body = body or "", curl_exit = curl_exit }
     end
@@ -137,10 +174,10 @@ local function headline(e)
     return (e:gsub("\nstack traceback:.*", ""):gsub("\n", " "))
 end
 
--- An error a callback raised while vim.fn.system blocked waits in the event
--- queue and reaches v:errmsg only when the loop runs again (measured on 0.10.0
--- and 0.12.5), so H.errors and H.expect_error drain the loop before they read
--- it.
+-- An error a callback raised while the suite blocked (in vim.fn.system, say)
+-- waits in the event queue and reaches v:errmsg only when the loop runs again
+-- (measured on 0.10.0 and 0.12.5), so H.errors and H.expect_error drain the
+-- loop before they read it.
 local function drain()
     vim.wait(10, function() return false end)
 end
@@ -177,6 +214,21 @@ local function open_ledger(caller)
         error(caller .. " after H.finish(): the ruling is already out", 3)
     end
     sample_errmsg()
+end
+
+-- Output written before the process ends without Neovim's own teardown.
+local function flush()
+    io.stdout:flush()
+    io.stderr:flush()
+end
+
+-- An exit ruling's reason, through io.stdout with a newline on both sides: on
+-- 0.12 a print line ends only when the next begins, and cq and os.exit skip
+-- the newline a normal exit writes, which glued the next line of output (a CI
+-- ::endgroup:: marker) onto it; print on 0.10.0 ends a line in \r\n and cut
+-- a long message short under textlock (measured).
+local function say(msg)
+    io.stdout:write("\n" .. msg .. "\n")
 end
 
 function H.section(title)
@@ -216,6 +268,9 @@ end
 -- A suite that asserted nothing proved nothing, so it fails as well, and so
 -- does one whose callbacks raised. The last banner line carries its own
 -- newline because cq skips the one a normal exit writes (measured on 0.12.5).
+-- cq ends the run through Neovim's own teardown; where Ex commands are refused
+-- (textlock, an expr mapping: E565) it raised and the run went on to exit 0
+-- (measured), so a cq that raises or returns falls through to the real exit.
 function H.finish()
     open_ledger("H.finish")
     for _, e in ipairs(H.errors()) do
@@ -230,71 +285,99 @@ function H.finish()
     print("========================================\n")
     verdict = (failed > 0 or passed == 0) and "fail" or "pass"
     if verdict == "fail" then
-        vim.cmd("cq 1")
+        local ok, err = pcall(vim.cmd, "cq 1")
+        if not ok then
+            say("cq refused: " .. headline(tostring(err)))
+        end
+        flush()
+        real_exit(1)
     end
 end
 
 -- A suite that returns early or never calls H.finish() would exit 0 whatever
 -- it asserted, and after a passing ruling an error a callback raised on the
--- way out still fails the run. Returns true, with the reason printed, when the
--- run must exit 1. Each message ends in its own newline because cq and
--- os.exit skip the one a normal exit writes, which glued the next line of
--- output (a CI ::endgroup:: marker) onto it (measured).
+-- way out still fails the run. A failing ruling fails the exit too, whichever
+-- path ends the process. Returns true, with the reason said, when the run
+-- must exit 1.
 local function exit_must_fail()
-    if not verdict then
-        print("suite ended without H.finish()\n")
+    if verdict == "fail" then
         return true
     end
-    if verdict == "pass" then
-        local late = H.errors()
-        if #late > 0 then
-            print("error reported after H.finish(): " .. headline(late[#late]) .. "\n")
-            return true
-        end
+    if not verdict then
+        say("suite ended without H.finish()")
+        return true
+    end
+    local late = H.errors()
+    if #late > 0 then
+        say("error reported after H.finish(): " .. headline(late[#late]))
+        return true
     end
     return false
 end
 
+-- Set once a ruling fails the run, so a later exit path neither prints the
+-- reason again nor rules it away.
+local exit_failed = false
+
 -- The ruling fails closed: an error raised inside it rules exit 1 as well,
--- where in VimLeavePre it left the exit code at 0 (measured). The message goes
--- through io.stdout with a leading newline, since the last print line has not
--- ended yet.
+-- where in VimLeavePre it left the exit code at 0 (measured).
 local function exit_must_fail_closed()
-    local ok, must_fail = pcall(exit_must_fail)
-    if not ok then
-        io.stdout:write("\nexit ruling raised: " .. tostring(must_fail) .. "\n")
+    if exit_failed then
         return true
     end
+    local ok, must_fail = pcall(exit_must_fail)
+    if not ok then
+        say("exit ruling raised: " .. tostring(must_fail))
+        must_fail = true
+    end
+    exit_failed = must_fail
     return must_fail
 end
 
--- cq inside VimLeavePre sets the exit code under -l (measured on 0.10.0 and
--- 0.12.5).
+-- cq in VimLeavePre let a quit still pending (a vim.schedule callback running
+-- qa! or cq 0 while Neovim tears down) set the exit code after it, so a red
+-- suite exited 0 (measured on 0.10.0 and 0.12.5); the ruling ends the process
+-- itself unless the exit under way already carries 1. On 0.13 os.exit is
+-- Neovim's own exit, which fires this event and runs pending callbacks first,
+-- so the autocmd is nested: a quit such a callback runs fires it again and is
+-- ruled like any other (measured on nightly v0.13.0-dev).
 vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("tests_helpers_finish", { clear = true }),
+    nested = true,
     callback = function()
-        if exit_must_fail_closed() then
-            vim.cmd("cq 1")
+        if exit_must_fail_closed() and vim.v.exiting ~= 1 then
+            flush()
+            real_exit(1)
         end
     end,
 })
 
--- os.exit leaves without VimLeavePre, so a suite that called it after a
--- failed assertion exited 0 with no ruling (measured); it takes the same
--- ruling on the way out. From a libuv callback (a fast event) the ruling
--- cannot drain (vim.wait raises E5560) and print is dropped before the exit,
--- so it rules on the verdict alone and writes through io.stdout (measured on
--- 0.10.0 and 0.12.5).
-local real_exit = os.exit
+-- os.exit leaves without VimLeavePre on 0.10 and 0.12, so a suite that called
+-- it after a failed assertion exited 0 with no ruling (measured); it takes the
+-- same ruling on the way out. A fast event (a libuv callback) can neither
+-- drain the loop nor print, 0.13 refuses os.exit there (E5560), and an error
+-- raised just before it went unseen (measured), so from a fast event the call
+-- only schedules the ruling and returns: the run ends at the next turn of the
+-- loop with the code the ruling gives, and the caller's code after os.exit
+-- runs until then.
+local exit_scheduled = false
 os.exit = function(code, ...)
     if vim.in_fast_event() then
-        if not verdict then
-            io.stdout:write("\nsuite ended without H.finish()\n")
-            return real_exit(1, ...)
+        if not exit_scheduled then
+            exit_scheduled = true
+            local close = ...
+            vim.schedule(function()
+                if exit_must_fail_closed() then
+                    flush()
+                    return real_exit(1)
+                end
+                return real_exit(code, close)
+            end)
         end
-        return real_exit(code, ...)
+        return
     end
     if exit_must_fail_closed() then
+        flush()
         return real_exit(1, ...)
     end
     return real_exit(code, ...)
