@@ -35,8 +35,13 @@ jobs:
         nvim: [stable]
         # v1.5.0 is the floor the v1.10.0 release notes promise (the README
         # states it from F-09 on); live-server main is the upstream job's to
-        # report.
+        # report. The tag is lightweight and could move, so the checkout
+        # takes its commit: the floor moves only by editing this SHA (the tag
+        # ruleset of Task 15 is the second lock).
         live_server: [v1.5.0]
+        include:
+          - live_server: v1.5.0
+            live_server_ref: f98bae79fd30274524412f7514549d84391d6bb2 # v1.5.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,7 +50,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: selimacerbas/live-server.nvim
-          ref: ${{ matrix.live_server }}
+          ref: ${{ matrix.live_server_ref }}
           path: live-server-rtp
           persist-credentials: false
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
@@ -80,11 +85,12 @@ jobs:
         with:
           persist-credentials: false
       # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
-      # Neovim 0.10.0 against the live-server floor is the minimal install.
+      # Neovim 0.10.0 against the live-server floor is the minimal install;
+      # the floor is pinned by commit, as in the test matrix.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: selimacerbas/live-server.nvim
-          ref: v1.5.0
+          ref: f98bae79fd30274524412f7514549d84391d6bb2 # v1.5.0
           path: live-server-rtp
           persist-credentials: false
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
