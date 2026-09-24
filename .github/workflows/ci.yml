@@ -15,6 +15,16 @@ on:
 permissions:
   contents: read
 
+# The live-server floor every gating job runs against: the tag the v1.10.0
+# release notes promise (the README states it from F-09 on) and the commit it
+# named when pinned. The tag is lightweight and could move, so the checkouts
+# take the commit and a step checks the tag still names it; the floor moves
+# by editing these two lines together (the tag ruleset of Task 15 is the
+# second lock). live-server main is the upstream job's to report.
+env:
+  LIVE_SERVER_FLOOR: v1.5.0
+  LIVE_SERVER_FLOOR_SHA: f98bae79fd30274524412f7514549d84391d6bb2
+
 concurrency:
   # A PR's superseded run is cancelled; a push, the schedule and a manual run
   # each get their own group, so no verdict on main is ever cancelled or
@@ -25,23 +35,13 @@ concurrency:
 
 jobs:
   test:
-    name: test (${{ matrix.os }}, nvim ${{ matrix.nvim }}, live-server ${{ matrix.live_server }})
+    name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        nvim: [stable]
-        # v1.5.0 is the floor the v1.10.0 release notes promise (the README
-        # states it from F-09 on); live-server main is the upstream job's to
-        # report. The tag is lightweight and could move, so the checkout
-        # takes its commit: the floor moves only by editing this SHA (the tag
-        # ruleset of Task 15 is the second lock).
-        live_server: [v1.5.0]
-        include:
-          - live_server: v1.5.0
-            live_server_ref: f98bae79fd30274524412f7514549d84391d6bb2 # v1.5.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,13 +50,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: selimacerbas/live-server.nvim
-          ref: ${{ matrix.live_server_ref }}
+          ref: ${{ env.LIVE_SERVER_FLOOR_SHA }}
           path: live-server-rtp
           persist-credentials: false
+      # A moved tag is the supply-chain event this step surfaces: the checkout
+      # took the pinned commit, and the tag must still name it.
+      - name: live-server floor is the pinned tag
+        run: |
+          git -C live-server-rtp fetch --depth 1 origin "refs/tags/$LIVE_SERVER_FLOOR:refs/tags/$LIVE_SERVER_FLOOR"
+          tagged=$(git -C live-server-rtp rev-parse "$LIVE_SERVER_FLOOR^{commit}")
+          if [ "$tagged" != "$LIVE_SERVER_FLOOR_SHA" ]; then
+            echo "::error::live-server $LIVE_SERVER_FLOOR names $tagged, not the pinned $LIVE_SERVER_FLOOR_SHA"
+            exit 1
+          fi
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
         with:
           neovim: true
-          version: ${{ matrix.nvim }}
+          version: stable
       - name: Version
         run: nvim --version | head -n 3
       # Release builds bundle the markdown parser since 0.10, so this asserts
@@ -77,7 +87,7 @@ jobs:
   # The floor this plugin requires (the README states it from the floor
   # commit on): the first 0.10 release, not its last patch.
   floor:
-    name: floor (ubuntu-latest, nvim v0.10.0, live-server v1.5.0)
+    name: floor (ubuntu-latest, nvim v0.10.0, live-server floor)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -85,14 +95,23 @@ jobs:
         with:
           persist-credentials: false
       # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
-      # Neovim 0.10.0 against the live-server floor is the minimal install;
-      # the floor is pinned by commit, as in the test matrix.
+      # Neovim 0.10.0 against the live-server floor is the minimal install.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: selimacerbas/live-server.nvim
-          ref: f98bae79fd30274524412f7514549d84391d6bb2 # v1.5.0
+          ref: ${{ env.LIVE_SERVER_FLOOR_SHA }}
           path: live-server-rtp
           persist-credentials: false
+      # A moved tag is the supply-chain event this step surfaces: the checkout
+      # took the pinned commit, and the tag must still name it.
+      - name: live-server floor is the pinned tag
+        run: |
+          git -C live-server-rtp fetch --depth 1 origin "refs/tags/$LIVE_SERVER_FLOOR:refs/tags/$LIVE_SERVER_FLOOR"
+          tagged=$(git -C live-server-rtp rev-parse "$LIVE_SERVER_FLOOR^{commit}")
+          if [ "$tagged" != "$LIVE_SERVER_FLOOR_SHA" ]; then
+            echo "::error::live-server $LIVE_SERVER_FLOOR names $tagged, not the pinned $LIVE_SERVER_FLOOR_SHA"
+            exit 1
+          fi
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
         with:
           neovim: true
