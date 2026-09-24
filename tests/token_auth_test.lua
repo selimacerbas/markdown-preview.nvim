@@ -82,7 +82,9 @@ ok(mp._token == nil, "_token cleared after stop")
 ok(mp._server_instance == nil, "_server_instance cleared after stop")
 
 -- Refused is curl 7; a socket left bound and silent is curl 28, which a
--- status of 0 alone passed (measured). Give the close a moment.
+-- status of 0 alone passed (measured). Give the close a moment. Windows
+-- reports a refused loopback connect only after about two seconds of
+-- retries, which H.http_get's connect bound waits out, so 7 holds there too.
 vim.wait(200, function() return false end)
 r = http_get(("http://127.0.0.1:%d/"):format(port))
 eq(r.curl_exit, 7, "the port refuses connections after stop")

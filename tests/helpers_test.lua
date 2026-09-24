@@ -14,7 +14,10 @@ local ok, eq = H.ok, H.eq
 H.section("Section 1: root and isolation")
 ok(vim.fn.isdirectory(H.root .. "/tests") == 1, "H.root is the directory that holds tests/")
 for _, kind in ipairs({ "cache", "data", "state" }) do
-    ok(vim.fn.stdpath(kind):find(xdg, 1, true) == 1, ("stdpath %s sits under the XDG root H.isolate() returned"):format(kind))
+    ok(
+        vim.fn.stdpath(kind):find(xdg, 1, true) == 1,
+        ("stdpath %s sits under the XDG root H.isolate() returned"):format(kind)
+    )
 end
 
 H.section("Section 2: bounded curl")
@@ -59,7 +62,9 @@ local function peer(reply)
                 seen.line = buf:match("^[^\r\n]*")
                 c:read_stop()
                 c:write(reply, function()
-                    c:shutdown(function() c:close() end)
+                    c:shutdown(function()
+                        c:close()
+                    end)
                 end)
             end
         end)
@@ -117,18 +122,24 @@ H.section("Section 3: the exit code is the ruling")
 -- instead of a stalled suite; vim.system reports that timeout as exit 124.
 -- opts.env adds to the child's environment, opts.helpers loads another copy
 -- of the helper, opts.prelude runs before the helper loads and opts.cwd is
--- the child's working directory.
+-- the child's working directory. A Windows child ends its lines in \r\n,
+-- which a pattern naming \n missed (the first hosted run), so the output is
+-- read with every line end folded to \n, once, here.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child_exit(body, expect, opts)
     opts = opts or {}
     local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
     H.write_file(path, ("%slocal H = dofile(%q)\n%s\n"):format(opts.prelude or "", opts.helpers or helpers_path, body))
-    local r = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-l", path }, { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }):wait()
+    local r = vim.system(
+        { vim.v.progpath, "--headless", "-u", "NONE", "-l", path },
+        { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }
+    ):wait()
     if r.code == 124 then
         return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
     end
-    if not ((r.stdout or "") .. (r.stderr or "")):find(expect) then
+    local out = ((r.stdout or "") .. (r.stderr or "")):gsub("\r+\n", "\n")
+    if not out:find(expect) then
         return ("exit %d without %q"):format(r.code, expect)
     end
     return r.code
@@ -137,50 +148,132 @@ eq(child_exit('H.ok(false, "deliberate")\nH.finish()', "FAIL: deliberate"), 1, "
 -- Through H.ok, so a broken H.eq cannot vouch for itself.
 ok(child_exit('H.eq(1, 2, "x")\nH.finish()', "FAIL: x %(got 1, want 2%)") == 1, "a failed H.eq exits 1")
 eq(child_exit("H.finish()", "No assertion ran"), 1, "a suite with no assertion exits 1")
-eq(child_exit('H.ok(true, "x")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped"), 0, "one passing assertion exits 0")
-eq(child_exit('H.ok(true, "x")\nH.skip("y")\nH.finish()', "Results: 1 passed, 0 failed, 1 skipped"), 0, "a skip is counted and fails nothing")
-eq(child_exit('H.skip("y")\nH.finish()', "Results: 0 passed, 0 failed, 1 skipped"), 1, "a suite that only skipped exits 1")
-eq(child_exit('H.ok(false, "deliberate")', "suite ended without H%.finish%(%)"), 1, "a failed assertion without H.finish() exits 1")
-eq(child_exit('H.ok(true, "x")', "suite ended without H%.finish%(%)"), 1, "a passing suite that never calls H.finish() exits 1")
-eq(child_exit('H.ok(true, "x")\nH.finish()\nH.ok(true, "late")', "H%.ok after H%.finish%(%)"), 1, "an assertion after H.finish() exits 1")
-eq(child_exit('H.ok(false, "deliberate")\nos.exit(0)', "suite ended without H%.finish%(%)"), 1, "a failed assertion then os.exit(0) exits 1")
-eq(child_exit('H.ok(true, "x")\nH.finish()\nos.exit(3)', "Results: 1 passed, 0 failed, 0 skipped"), 3, "os.exit after a passing H.finish() keeps its code")
+eq(
+    child_exit('H.ok(true, "x")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped"),
+    0,
+    "one passing assertion exits 0"
+)
+eq(
+    child_exit('H.ok(true, "x")\nH.skip("y")\nH.finish()', "Results: 1 passed, 0 failed, 1 skipped"),
+    0,
+    "a skip is counted and fails nothing"
+)
+eq(
+    child_exit('H.skip("y")\nH.finish()', "Results: 0 passed, 0 failed, 1 skipped"),
+    1,
+    "a suite that only skipped exits 1"
+)
+eq(
+    child_exit('H.ok(false, "deliberate")', "suite ended without H%.finish%(%)"),
+    1,
+    "a failed assertion without H.finish() exits 1"
+)
+eq(
+    child_exit('H.ok(true, "x")', "suite ended without H%.finish%(%)"),
+    1,
+    "a passing suite that never calls H.finish() exits 1"
+)
+eq(
+    child_exit('H.ok(true, "x")\nH.finish()\nH.ok(true, "late")', "H%.ok after H%.finish%(%)"),
+    1,
+    "an assertion after H.finish() exits 1"
+)
+eq(
+    child_exit('H.ok(false, "deliberate")\nos.exit(0)', "suite ended without H%.finish%(%)"),
+    1,
+    "a failed assertion then os.exit(0) exits 1"
+)
+eq(
+    child_exit('H.ok(true, "x")\nH.finish()\nos.exit(3)', "Results: 1 passed, 0 failed, 0 skipped"),
+    3,
+    "os.exit after a passing H.finish() keeps its code"
+)
 -- From a timer callback (a fast event) os.exit only schedules the ruling,
 -- which drains and rules on the main loop, since a fast event can neither
 -- drain nor print and 0.13 refuses os.exit there (E5560). Each body ends in a
 -- line that fails the case if the timer never fired.
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.ok(true, "x")
 H.finish()
 local uv = vim.uv or vim.loop
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
-os.exit(5)]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "os.exit(0) from a callback after a passing H.finish() exits 0")
-eq(child_exit([[
+os.exit(5)]],
+        "Results: 1 passed, 0 failed, 0 skipped"
+    ),
+    0,
+    "os.exit(0) from a callback after a passing H.finish() exits 0"
+)
+eq(
+    child_exit(
+        [[
 H.ok(false, "deliberate")
 local uv = vim.uv or vim.loop
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
-H.finish()]], "\nsuite ended without H%.finish%(%)\n"), 1, "os.exit(0) from a callback in an unfinished suite exits 1 with the message on its own line")
+H.finish()]],
+        "\nsuite ended without H%.finish%(%)\n"
+    ),
+    1,
+    "os.exit(0) from a callback in an unfinished suite exits 1 with the message on its own line"
+)
+-- A child that writes \r\n itself pins the fold on every platform; one CR
+-- more, as a text-mode stdout on Windows would add, folds the same.
+eq(
+    child_exit(
+        [[
+io.stdout:write("\r\nfolded\r\r\n")
+H.ok(true, "x")
+H.finish()]],
+        "\nfolded\n"
+    ),
+    0,
+    "a child's \\r\\n line ends read as \\n"
+)
 -- A quit a callback still holds when the main chunk ends runs during Neovim's
 -- teardown, after the ruling, and set the exit code again (measured).
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.ok(true, "sync ok")
 vim.schedule(function()
     H.ok(false, "async result is red")
     vim.cmd("qa!")
-end)]], "suite ended without H%.finish%(%)"), 1, "a qa! a pending callback runs after the ruling still exits 1")
-eq(child_exit([[
+end)]],
+        "suite ended without H%.finish%(%)"
+    ),
+    1,
+    "a qa! a pending callback runs after the ruling still exits 1"
+)
+eq(
+    child_exit(
+        [[
 H.ok(false, "deliberate")
-vim.schedule(function() vim.cmd("cq 0") end)]], "suite ended without H%.finish%(%)"), 1, "a cq 0 a pending callback runs after the ruling still exits 1")
+vim.schedule(function() vim.cmd("cq 0") end)]],
+        "suite ended without H%.finish%(%)"
+    ),
+    1,
+    "a cq 0 a pending callback runs after the ruling still exits 1"
+)
 -- Under textlock (an expr mapping) cq raises E565 instead of ending the run.
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.ok(false, "deliberate")
 vim.keymap.set("n", "x", function() H.finish() return "" end, { expr = true })
-vim.api.nvim_feedkeys("x", "x", false)]], "cq refused: [^\n]*E565"), 1, "a failing H.finish() whose cq is refused exits 1")
+vim.api.nvim_feedkeys("x", "x", false)]],
+        "cq refused: [^\n]*E565"
+    ),
+    1,
+    "a failing H.finish() whose cq is refused exits 1"
+)
 -- H.finish()'s drain serves a callback chain until it stops, so this quit
 -- lands before the ruling prints (measured).
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.ok(false, "deliberate")
 local uv = vim.uv or vim.loop
 local deadline = uv.hrtime() + 300e6
@@ -192,7 +285,12 @@ local function chain()
     end
 end
 vim.schedule(chain)
-H.finish()]], "a quit ran inside H%.finish%(%)'s drain"), 1, "a quit a callback runs inside H.finish()'s drain exits 1 and says so")
+H.finish()]],
+        "a quit ran inside H%.finish%(%)'s drain"
+    ),
+    1,
+    "a quit a callback runs inside H.finish()'s drain exits 1 and says so"
+)
 
 -- The exits the helper makes itself skip Neovim's teardown, which removes its
 -- tempdir and H.isolate's tree inside it. Each child gets a TMPDIR of its
@@ -208,14 +306,26 @@ local function leftovers(tmp)
     return table.concat(found, ", ")
 end
 local tmp = H.tmpdir()
-eq(child_exit('H.isolate()\nH.ok(false, "red")', "suite ended without H%.finish%(%)", { env = { TMPDIR = tmp } }), 1, "an unfinished red suite exits 1")
+eq(
+    child_exit('H.isolate()\nH.ok(false, "red")', "suite ended without H%.finish%(%)", { env = { TMPDIR = tmp } }),
+    1,
+    "an unfinished red suite exits 1"
+)
 eq(leftovers(tmp), "", "an unfinished red suite leaves no tempdir behind")
 tmp = H.tmpdir()
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.isolate()
 H.ok(false, "deliberate")
 vim.keymap.set("n", "x", function() H.finish() return "" end, { expr = true })
-vim.api.nvim_feedkeys("x", "x", false)]], "cq refused", { env = { TMPDIR = tmp } }), 1, "a refused cq under isolation exits 1")
+vim.api.nvim_feedkeys("x", "x", false)]],
+        "cq refused",
+        { env = { TMPDIR = tmp } }
+    ),
+    1,
+    "a refused cq under isolation exits 1"
+)
 eq(leftovers(tmp), "", "a refused cq leaves no tempdir behind")
 -- tempname() returns "" when Neovim has no tempdir, and the parent of "" is
 -- ".", so a cleanup that derived its target at exit emptied the working
@@ -223,24 +333,47 @@ eq(leftovers(tmp), "", "a refused cq leaves no tempdir behind")
 -- /tmp, measured), so the prelude stands in for a Neovim without one.
 local cwd = H.tmpdir()
 H.write_file(cwd .. "/sentinel", "keep")
-eq(child_exit('H.ok(false, "red")', "suite ended without H%.finish%(%)",
-    { prelude = 'vim.fn.tempname = function() return "" end\n', cwd = cwd }), 1, "an unfinished red suite without a tempdir exits 1")
+eq(
+    child_exit(
+        'H.ok(false, "red")',
+        "suite ended without H%.finish%(%)",
+        { prelude = 'vim.fn.tempname = function() return "" end\n', cwd = cwd }
+    ),
+    1,
+    "an unfinished red suite without a tempdir exits 1"
+)
 eq(vim.fn.filereadable(cwd .. "/sentinel"), 1, "an exit without a tempdir leaves the working directory alone")
 
 H.section("Section 4: an error raised in a callback fails the suite")
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 local uv = vim.uv or vim.loop
 uv.new_timer():start(10, 0, function() error("luv boom") end)
 vim.wait(200, function() return false end)
 H.ok(true, "the assertions pass")
-H.finish()]], "FAIL: error reported: [^\n]*luv boom"), 1, "an error in a timer callback exits 1")
-eq(child_exit([[
+H.finish()]],
+        "FAIL: error reported: [^\n]*luv boom"
+    ),
+    1,
+    "an error in a timer callback exits 1"
+)
+eq(
+    child_exit(
+        [[
 vim.schedule(function() error("sched boom") end)
 H.ok(true, "the assertions pass")
-H.finish()]], "FAIL: error reported: [^\n]*sched boom"), 1, "an error in a vim.schedule callback exits 1")
+H.finish()]],
+        "FAIL: error reported: [^\n]*sched boom"
+    ),
+    1,
+    "an error in a vim.schedule callback exits 1"
+)
 -- The read callback raises while the suite waits in H.http_get, the window
 -- where every server handler runs.
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 local uv = vim.uv or vim.loop
 local srv = uv.new_tcp()
 srv:bind("127.0.0.1", 0)
@@ -254,14 +387,28 @@ srv:listen(8, function()
     end)
 end)
 H.eq(H.http_get(("http://127.0.0.1:%d/"):format(srv:getsockname().port)).status, 200, "the response arrived")
-H.finish()]], "FAIL: error reported: [^\n]*tcp boom"), 1, "an error in a tcp read callback during H.http_get exits 1")
-eq(child_exit([[
+H.finish()]],
+        "FAIL: error reported: [^\n]*tcp boom"
+    ),
+    1,
+    "an error in a tcp read callback during H.http_get exits 1"
+)
+eq(
+    child_exit(
+        [[
 H.ok(true, "the assertions pass")
 H.finish()
-vim.schedule(function() error("late boom") end)]], "error reported after H%.finish%(%): [^\n]*late boom"), 1, "an error raised after a passing H.finish() exits 1")
+vim.schedule(function() error("late boom") end)]],
+        "error reported after H%.finish%(%): [^\n]*late boom"
+    ),
+    1,
+    "an error raised after a passing H.finish() exits 1"
+)
 -- The ruling runs outside the timer, so the late error is seen; the marker
 -- goes to stdout, so the case fails if the timer never fired.
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.ok(true, "x")
 H.finish()
 vim.schedule(function() error("late") end)
@@ -270,32 +417,79 @@ uv.new_timer():start(50, 0, function()
     io.stdout:write("timer fired\n")
     os.exit(0)
 end)
-vim.wait(1000, function() return false end)]], "timer fired.*error reported after H%.finish%(%): [^\n]*late"), 1, "a late callback error then os.exit(0) from a callback exits 1")
+vim.wait(1000, function() return false end)]],
+        "timer fired.*error reported after H%.finish%(%): [^\n]*late"
+    ),
+    1,
+    "a late callback error then os.exit(0) from a callback exits 1"
+)
 
 H.section("Section 5: H.expect_error consumes only the message it expects")
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 H.ok(H.expect_error("expected boom", function() vim.notify("expected boom", vim.log.levels.ERROR) end), "the expected error was consumed")
-H.finish()]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "an expected error notification is consumed")
-eq(child_exit([[
+H.finish()]],
+        "Results: 1 passed, 0 failed, 0 skipped"
+    ),
+    0,
+    "an expected error notification is consumed"
+)
+eq(
+    child_exit(
+        [[
 H.expect_error("expected boom", function() error("other boom") end)
 H.ok(true, "never reached")
-H.finish()]], "E5113[^\n]*other boom"), 1, "an error fn raises is not swallowed")
-eq(child_exit([[
+H.finish()]],
+        "E5113[^\n]*other boom"
+    ),
+    1,
+    "an error fn raises is not swallowed"
+)
+eq(
+    child_exit(
+        [[
 H.ok(not H.expect_error("expected boom", function() vim.notify("other boom", vim.log.levels.ERROR) end), "a different message is not consumed")
-H.finish()]], "Results: 1 passed, 1 failed"), 1, "a different error message stays for the ledger")
-eq(child_exit('H.ok(not H.expect_error("x", function() end), "no error reported gives false")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped"), 0, "no error reported gives false")
-eq(child_exit([[
+H.finish()]],
+        "Results: 1 passed, 1 failed"
+    ),
+    1,
+    "a different error message stays for the ledger"
+)
+eq(
+    child_exit(
+        'H.ok(not H.expect_error("x", function() end), "no error reported gives false")\nH.finish()',
+        "Results: 1 passed, 0 failed, 0 skipped"
+    ),
+    0,
+    "no error reported gives false"
+)
+eq(
+    child_exit(
+        [[
 H.ok(H.expect_error("expected boom", function()
     vim.schedule(function() vim.notify("expected boom", vim.log.levels.ERROR) end)
 end), "the expected error was consumed")
-H.finish()]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "an expected error reported through a callback is seen")
+H.finish()]],
+        "Results: 1 passed, 0 failed, 0 skipped"
+    ),
+    0,
+    "an expected error reported through a callback is seen"
+)
 -- The scheduled error already sits in v:errmsg when fn runs, so without the
 -- sample first fn's own message would overwrite it.
-eq(child_exit([[
+eq(
+    child_exit(
+        [[
 vim.schedule(function() error("sched boom") end)
 vim.wait(20, function() return false end)
 H.ok(H.expect_error("expected boom", function() vim.notify("expected boom", vim.log.levels.ERROR) end), "the expected error was consumed")
-H.finish()]], "FAIL: error reported: [^\n]*sched boom"), 1, "a callback error pending before H.expect_error still fails the suite")
+H.finish()]],
+        "FAIL: error reported: [^\n]*sched boom"
+    ),
+    1,
+    "a callback error pending before H.expect_error still fails the suite"
+)
 
 H.section("Section 6: H.rtp proves the checkout is the copy require loads")
 -- A comma in the checkout's path splits its runtimepath entry and a copy on
@@ -304,7 +498,11 @@ H.section("Section 6: H.rtp proves the checkout is the copy require loads")
 -- trees carry both plugins' entry files and the message is matched up to lua/.
 local base = H.tmpdir()
 if base:find("[,$*?%[%]{}]") then
-    H.skip("a checkout whose path the runtimepath splits raises (the temp path " .. base .. " carries a comma, a dollar sign or a glob character)")
+    H.skip(
+        "a checkout whose path the runtimepath splits raises (the temp path "
+            .. base
+            .. " carries a comma, a dollar sign or a glob character)"
+    )
 else
     local root = base .. "/a,b/checkout"
     vim.fn.mkdir(root .. "/tests", "p")
@@ -318,14 +516,24 @@ else
     local installed = vim.fn.stdpath("data") .. "/site/pack/x/start/live-server"
     vim.env.XDG_DATA_HOME = saved_data
     for _, dir in ipairs({ root, installed }) do
-        for _, rel in ipairs({ "lua/live_server/server.lua", "lua/live_server/util.lua", "lua/markdown_preview/init.lua" }) do
+        for _, rel in ipairs({
+            "lua/live_server/server.lua",
+            "lua/live_server/util.lua",
+            "lua/markdown_preview/init.lua",
+        }) do
             vim.fn.mkdir(vim.fs.dirname(dir .. "/" .. rel), "p")
             H.write_file(dir .. "/" .. rel, "return {}\n")
         end
     end
-    eq(child_exit("H.rtp()", vim.pesc(("the checkout at %s does not resolve: %s/lua/"):format(root, installed)),
-        { helpers = root .. "/tests/helpers.lua", env = { XDG_DATA_HOME = data } }), 1,
-        "a checkout whose path the runtimepath splits raises, naming the installed copy")
+    eq(
+        child_exit(
+            "H.rtp()",
+            vim.pesc(("the checkout at %s does not resolve: %s/lua/"):format(H.canon(root), H.canon(installed))),
+            { helpers = root .. "/tests/helpers.lua", env = { XDG_DATA_HOME = data } }
+        ),
+        1,
+        "a checkout whose path the runtimepath splits raises, naming the installed copy"
+    )
 end
 
 H.finish()
