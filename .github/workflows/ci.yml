@@ -33,9 +33,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         nvim: [stable]
-        # v1.5.0 is the floor the README and the v1.10.0 notes promise;
-        # main is what a fresh install pulls.
-        live_server: [v1.5.0, main]
+        # v1.5.0 is the floor the v1.10.0 release notes promise (the README
+        # states it from F-09 on); live-server main is the upstream job's to
+        # report.
+        live_server: [v1.5.0]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,11 +55,12 @@ jobs:
       - name: Version
         run: nvim --version | head -n 3
       # Release builds bundle the markdown parser since 0.10, so this asserts
-      # it instead of installing it; a -c Lua error alone would exit 0.
+      # it instead of installing it; a -c Lua error alone would exit 0, so the
+      # pcall covers the vim.treesitter lookup as well as the call.
       - name: Assert the markdown Tree-sitter parser
         run: >-
           nvim --headless -u NONE
-          -c 'lua local ok, p = pcall(vim.treesitter.get_string_parser, "# x", "markdown");
+          -c 'lua local ok, p = pcall(function() return vim.treesitter.get_string_parser("# x", "markdown") end);
           if not (ok and p) then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
           -c 'qa!'
       # -l exits 1 on a Lua error in the main chunk, where the luafile form the
@@ -70,9 +72,53 @@ jobs:
   # The floor this plugin requires (the README states it from the floor
   # commit on): the first 0.10 release, not its last patch.
   floor:
-    name: floor (ubuntu-latest, nvim v0.10.0, live-server main)
+    name: floor (ubuntu-latest, nvim v0.10.0, live-server v1.5.0)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
+      # Neovim 0.10.0 against the live-server floor is the minimal install.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: v1.5.0
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: v0.10.0
+      - name: Version
+        run: nvim --version | head -n 3
+      # Release builds bundle the markdown parser since 0.10, so this asserts
+      # it instead of installing it; a -c Lua error alone would exit 0, so the
+      # pcall covers the vim.treesitter lookup as well as the call.
+      - name: Assert the markdown Tree-sitter parser
+        run: >-
+          nvim --headless -u NONE
+          -c 'lua local ok, p = pcall(function() return vim.treesitter.get_string_parser("# x", "markdown") end);
+          if not (ok and p) then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
+          -c 'qa!'
+      - name: Headless tests
+        run: bash tests/run.sh
+
+  # A live-server main change that is not this repo's regression must not red
+  # every PR, so main is reported here, outside ci-ok, on every push and PR.
+  upstream:
+    name: upstream (${{ matrix.os }}, live-server main)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    # The run's conclusion follows the required check: upstream, nightly and
+    # windows are read from their own conclusions (a red one is a finding for
+    # F-01 or an upstream note, never a merge block).
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,17 +133,9 @@ jobs:
       - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
         with:
           neovim: true
-          version: v0.10.0
+          version: stable
       - name: Version
         run: nvim --version | head -n 3
-      # Release builds bundle the markdown parser since 0.10, so this asserts
-      # it instead of installing it; a -c Lua error alone would exit 0.
-      - name: Assert the markdown Tree-sitter parser
-        run: >-
-          nvim --headless -u NONE
-          -c 'lua local ok, p = pcall(vim.treesitter.get_string_parser, "# x", "markdown");
-          if not (ok and p) then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
-          -c 'qa!'
       - name: Headless tests
         run: bash tests/run.sh
 
@@ -110,6 +148,7 @@ jobs:
     name: nightly (${{ matrix.os }}, live-server main)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -142,6 +181,7 @@ jobs:
     name: windows (nvim stable, live-server main)
     runs-on: windows-latest
     timeout-minutes: 15
+    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -173,6 +213,9 @@ jobs:
         with:
           persist-credentials: false
       - name: actionlint
+        # Dependabot skips docker:// references (dependabot-core's
+        # github_actions file_parser returns early on them), so this digest
+        # is moved by hand (F-12).
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
         with:
           args: -color

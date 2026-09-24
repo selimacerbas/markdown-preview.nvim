@@ -3,5 +3,5 @@
 .DS_Store
 doc/tags
 node_modules/
-live-server-rtp/
+live-server-rtp
 nvim.log
