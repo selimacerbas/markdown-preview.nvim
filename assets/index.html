@@ -729,7 +729,7 @@
             margin: .5rem;
         }
 
-        /* Hide Mermaid's built-in error artifacts (NOT .messageText — used for sequence diagram labels) */
+        /* Hide Mermaid's built-in error artifacts (NOT .messageText: used for sequence diagram labels) */
         .mermaid-block :where(.error, .error-icon, .error-text, .errorText) {
             display: none !important
         }
@@ -1221,7 +1221,7 @@
 
         // ── Copy button on code blocks ────────────────────────────────
         // Relative image paths resolve against the served workspace, which
-        // only contains the rendered content — rewrite them to the token-
+        // only contains the rendered content: rewrite them to the token-
         // gated asset route, which resolves against the source file's dir.
         // Runs on the detached render tree BEFORE morphdom applies it, so
         // raw-HTML <img> tags never fire an unrewritten (404) request.
@@ -1387,7 +1387,7 @@
                 const ratio = (line - prev.line) / (next.line - prev.line);
                 offsetTop = prevTop + (nextTop - prevTop) * ratio;
             } else {
-                // Last element — extrapolate using its height
+                // Last element: extrapolate using its height
                 const h = prev.el.getBoundingClientRect().height;
                 const linesLeft = Math.max(1, total - prev.line);
                 offsetTop = prevTop + (line - prev.line) * (h / linesLeft);

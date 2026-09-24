@@ -65,9 +65,9 @@ M.config = {
 	bottom_padding = 0.5,
 
 	hooks = {
-		-- fun(url: string)|nil — called after preview starts; receives the preview URL
+		-- fun(url: string)|nil: called after preview starts; receives the preview URL
 		on_start = nil,
-		-- fun()|nil — called after preview stops
+		-- fun()|nil: called after preview stops
 		on_stop = nil,
 	},
 }
@@ -179,7 +179,7 @@ local function write_index_if_needed(dir)
 	end
 	-- Rewrite a persisted index whose baked token no longer matches what this
 	-- session serves. Covers a fresh token after restart AND a loopback<->
-	-- network switch (which flips whether the token is baked at all) — a stale
+	-- network switch (which flips whether the token is baked at all): a stale
 	-- non-empty token on a network bind would otherwise 401 every request.
 	local want = 'data-live-token="' .. (host_is_loopback() and (M._token or "") or "") .. '"'
 	local ok, existing = pcall(util.read_text, dst)
@@ -313,7 +313,7 @@ local function prerender_mermaid_blocks(text)
 				out[#out + 1] = "\n" .. html_block .. "\n"
 				pos = close_end + 1
 			else
-				-- mmdr failed for this block — leave fence untouched for JS fallback
+				-- mmdr failed for this block: leave fence untouched for JS fallback
 				out[#out + 1] = text:sub(pos, close_end)
 				pos = close_end + 1
 			end
@@ -415,7 +415,7 @@ local function maybe_refresh(bufnr, silent)
 	M._last_text_by_buf[bufnr] = text
 
 	-- Notify live-server of the content change for immediate SSE push
-	-- In secondary takeover mode, M._server_instance is nil — fs_watch handles reload
+	-- In secondary takeover mode, M._server_instance is nil: fs_watch handles reload
 	if M._server_instance then
 		pcall(ls_server.reload, M._server_instance, M.config.content_name)
 	end
@@ -603,7 +603,7 @@ function M.start()
 
 	-- Relative image support needs the asset route in live-server. The two
 	-- plugins are versioned independently, so warn (once) if the installed
-	-- live-server predates it — images will 404 until it's updated.
+	-- live-server predates it: images will 404 until it's updated.
 	if not (ls_server.features and ls_server.features.asset_route) and not M._warned_no_asset_route then
 		M._warned_no_asset_route = true
 		vim.notify(
@@ -647,7 +647,7 @@ function M.start()
 		})
 		if not ok then
 			vim.notify(
-				("Markdown Preview: failed to start server (port %s) — %s"):format(tostring(port), tostring(inst)),
+				("Markdown Preview: failed to start server (port %s): %s"):format(tostring(port), tostring(inst)),
 				vim.log.levels.ERROR
 			)
 			return
