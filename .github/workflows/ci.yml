@@ -247,12 +247,25 @@ jobs:
         with:
           args: -color
 
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: JohnnyMorganz/stylua-action@76fd70c03e6340ceaf673366712db9b20560b402 # v5.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: 2.5.2
+          args: --check lua plugin tests
+
   # The one status check branch protection is meant to require (an operator
   # step later). Each gating job is named, so an empty or shortened needs list
   # cannot pass.
   ci-ok:
     if: always()
-    needs: [test, floor, lint-workflows]
+    needs: [test, floor, lint-workflows, format]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -261,6 +274,7 @@ jobs:
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
           LINT: ${{ needs.lint-workflows.result }}
+          FORMAT: ${{ needs.format.result }}
         run: |
-          echo "test=$TEST floor=$FLOOR lint-workflows=$LINT"
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$LINT" = success ]
+          echo "test=$TEST floor=$FLOOR lint-workflows=$LINT format=$FORMAT"
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ]
