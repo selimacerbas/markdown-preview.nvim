@@ -1,7 +1,8 @@
 -- tests/rtp_test.lua
--- Pin how H.rtp() finds live-server.nvim: an override that is not a directory
--- and a missing dependency raise instead of letting require fall through to
--- an installed copy, and the path it returns is normalized, never env-expanded.
+-- Pin how H.rtp() finds live-server.nvim: an override that is not a directory,
+-- a missing dependency and a directory the runtimepath does not resolve to
+-- raise instead of letting require fall through to an installed copy, and the
+-- path it returns is normalized.
 --
 -- Run: nvim --headless -u NONE -l tests/rtp_test.lua
 
@@ -19,11 +20,11 @@ local ok, eq = H.ok, H.eq
 -- child killed at the bound as exit 124.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
-local function child(helpers, body, override)
+local function child(helpers, body, override, env)
 	local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
 	H.write_file(path, ("local H = dofile(%q)\n%s\n"):format(helpers, body))
 	local r = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-l", path }, {
-		env = { LIVE_SERVER_RTP = override },
+		env = vim.tbl_extend("force", env or {}, { LIVE_SERVER_RTP = override }),
 		timeout = CHILD_TIMEOUT_MS,
 	}):wait()
 	return r.code, (r.stdout or "") .. (r.stderr or "")
@@ -40,7 +41,13 @@ local function ruling(code, out, text)
 	return code
 end
 
-H.section("Section 1: a bad override and a missing dependency raise")
+-- A live_server/server.lua under root, enough for the lookup and for require.
+local function stub(root)
+	vim.fn.mkdir(root .. "/lua/live_server", "p")
+	H.write_file(root .. "/lua/live_server/server.lua", "return { start = function() end }\n")
+end
+
+H.section("Section 1: a lookup that cannot be proven raises")
 local code, out = child(helpers_path, "H.rtp()", "/nonexistent")
 eq(ruling(code, out, "LIVE_SERVER_RTP is set but is not a directory: /nonexistent"), 1,
 	"an override that is not a directory raises")
@@ -53,14 +60,29 @@ assert(uv.fs_copyfile(helpers_path, bare .. "/tests/helpers.lua"))
 code, out = child(bare .. "/tests/helpers.lua", "H.rtp()", "")
 eq(ruling(code, out, "live-server.nvim not found"), 1, "no candidate on any lookup path raises")
 
-H.section("Section 2: the path H.rtp() returns")
--- The override reaches the directory through "..", and its name carries a $.
+code, out = child(helpers_path, "H.rtp()", H.tmpdir())
+eq(ruling(code, out, "does not resolve"), 1, "an empty override directory raises")
+
+-- The runtimepath expands $HOME in the entry when it searches, so the stub
+-- under the literal name is never the one resolved (measured) and require
+-- would load the start package under XDG_DATA_HOME; the refusal names both.
 local base = H.tmpdir()
 local odd = base .. "/odd$HOME-x"
-vim.fn.mkdir(odd, "p")
+stub(odd)
+local data = base .. "/data"
+local installed = data .. "/nvim/site/pack/t/start/installed"
+stub(installed)
+code, out = child(helpers_path, "H.rtp()", odd, { XDG_DATA_HOME = data })
+eq(ruling(code, out, ("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(odd, installed)), 1,
+	"an override with a $ in its name raises, naming the shadowing copy")
+
+H.section("Section 2: the path H.rtp() returns")
+local _
+local plain = base .. "/plain"
+stub(plain)
 vim.fn.mkdir(base .. "/sub", "p")
-_, out = child(helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/sub/../odd$HOME-x")
-eq(out:match("found=([^\r\n]*)"), odd, "an override comes back without /../ and without env expansion")
+_, out = child(helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/sub/../plain")
+eq(out:match("found=([^\r\n]*)"), plain, "an override reached through .. comes back normalized")
 
 _, out = child(helpers_path, [[
 print("found=" .. H.rtp())

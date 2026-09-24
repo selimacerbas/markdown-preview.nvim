@@ -39,8 +39,9 @@ end
 -- live-server.nvim, the dependency, is found from $LIVE_SERVER_RTP,
 -- ./live-server-rtp (the CI checkout) or ../live-server.nvim (the sibling
 -- clone); the first that exists wins. A set override that is not a directory
--- raises, and so does finding none: falling through would let require load
--- whatever live-server the startup runtimepath or packpath carries.
+-- raises, and so does finding none or a directory the search does not resolve
+-- to: falling through would let require load whatever live-server the startup
+-- runtimepath or packpath carries.
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
     -- Built one by one: a nil first element would end ipairs before the
@@ -58,9 +59,17 @@ function H.rtp()
     for _, dir in ipairs(candidates) do
         if vim.fn.isdirectory(dir) == 1 then
             -- The sibling candidate carries a ".." segment no caller should
-            -- see; the name was checked literally, so a $ in it stays literal.
+            -- see; the name was checked literally, so it is not expanded here.
             dir = vim.fs.normalize(dir, { expand_env = false })
             vim.opt.runtimepath:prepend(dir)
+            -- The runtimepath interprets an entry at search time ($VAR, a
+            -- comma, a glob), so the string checked above is not the entry
+            -- require sees, and an empty directory passes that check; only
+            -- the file the search resolves proves the entry (measured).
+            local hit = vim.api.nvim_get_runtime_file("lua/live_server/server.lua", false)[1]
+            if not (hit and vim.startswith(vim.fs.normalize(hit, { expand_env = false }), dir .. "/")) then
+                error("live-server.nvim at " .. dir .. " does not resolve: " .. tostring(hit) .. " (a name with $, a comma or a glob character, or an empty directory)")
+            end
             return dir
         end
     end
