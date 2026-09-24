@@ -10,14 +10,23 @@ end
 function M.read()
 	local path = lock_path()
 	local fd = uv.fs_open(path, "r", 420)
-	if not fd then return nil end
+	if not fd then
+		return nil
+	end
 	local stat = uv.fs_fstat(fd)
-	if not stat then uv.fs_close(fd); return nil end
+	if not stat then
+		uv.fs_close(fd)
+		return nil
+	end
 	local data = uv.fs_read(fd, stat.size, 0)
 	uv.fs_close(fd)
-	if not data then return nil end
+	if not data then
+		return nil
+	end
 	local ok, tbl = pcall(vim.json.decode, data)
-	if not ok or type(tbl) ~= "table" then return nil end
+	if not ok or type(tbl) ~= "table" then
+		return nil
+	end
 	return tbl
 end
 
@@ -50,12 +59,20 @@ function M.is_server_alive(port)
 	local tcp = uv.new_tcp()
 	tcp:connect("127.0.0.1", port, function(err)
 		alive = not err
-		pcall(function() tcp:shutdown() end)
-		pcall(function() tcp:close() end)
+		pcall(function()
+			tcp:shutdown()
+		end)
+		pcall(function()
+			tcp:close()
+		end)
 	end)
-	vim.wait(500, function() return alive ~= nil end, 10)
+	vim.wait(500, function()
+		return alive ~= nil
+	end, 10)
 	if alive == nil then
-		pcall(function() tcp:close() end)
+		pcall(function()
+			tcp:close()
+		end)
 		alive = false
 	end
 	return alive

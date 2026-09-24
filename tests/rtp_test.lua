@@ -104,17 +104,29 @@ end
 -- A start package on the child's own packpath: its data directory is
 -- nvim-data on Windows and follows NVIM_APPNAME, so the child reports it.
 local data = base .. "/data"
-local child_data = printed(succeeded("the child reports its data directory", helpers_path, [[
+local child_data = printed(
+	succeeded(
+		"the child reports its data directory",
+		helpers_path,
+		[[
 io.stdout:write("data=" .. vim.fn.stdpath("data") .. "\n")
 H.ok(true, "reported")
-H.finish()]], "", { XDG_DATA_HOME = data }), "data")
+H.finish()]],
+		"",
+		{ XDG_DATA_HOME = data }
+	),
+	"data"
+)
 local installed = child_data .. "/site/pack/t/start/installed"
 stub(installed)
 
 H.section("Section 1: a lookup that cannot be proven raises")
 local code, out = child(helpers_path, "H.rtp()", "/nonexistent")
-eq(ruling(code, out, "LIVE_SERVER_RTP is set but is not a directory: /nonexistent"), 1,
-	"an override that is not a directory raises")
+eq(
+	ruling(code, out, "LIVE_SERVER_RTP is set but is not a directory: /nonexistent"),
+	1,
+	"an override that is not a directory raises"
+)
 
 -- H.root follows the helper's own path, so a copy of it in a tree with no
 -- ./live-server-rtp and no sibling clone finds nothing; the message names
@@ -122,7 +134,18 @@ eq(ruling(code, out, "LIVE_SERVER_RTP is set but is not a directory: /nonexisten
 fixture("no candidate on any lookup path raises, naming the clone, the floor and both paths", function(msg)
 	local bare = base .. "/bare/mp"
 	code, out = child(tree(bare), "H.rtp()", "")
-	eq(ruling(code, out, ("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (v1.5.0 or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(H.canon(bare), H.canon(base .. "/bare"))), 1, msg)
+	eq(
+		ruling(
+			code,
+			out,
+			("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (v1.5.0 or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
+				H.canon(bare),
+				H.canon(base .. "/bare")
+			)
+		),
+		1,
+		msg
+	)
 end)
 
 code, out = child(helpers_path, "H.rtp()", H.tmpdir())
@@ -142,7 +165,18 @@ fixture("an override with a $ in its name raises, naming the shadowing copy", fu
 	end
 	stub(odd)
 	code, out = child(helpers_path, "H.rtp()", odd, { XDG_DATA_HOME = data })
-	eq(ruling(code, out, ("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(H.canon(base) .. "/odd$HOME-x", H.canon(installed))), 1, msg)
+	eq(
+		ruling(
+			code,
+			out,
+			("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(
+				H.canon(base) .. "/odd$HOME-x",
+				H.canon(installed)
+			)
+		),
+		1,
+		msg
+	)
 end)
 
 -- An override above a start package: the search resolves the package's
@@ -150,7 +184,18 @@ end)
 -- the override's own file refuses it.
 fixture("an override that holds an installed copy below it raises", function(msg)
 	code, out = child(helpers_path, "H.rtp()", data, { XDG_DATA_HOME = data })
-	eq(ruling(code, out, ("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(H.canon(data), H.canon(installed))), 1, msg)
+	eq(
+		ruling(
+			code,
+			out,
+			("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(
+				H.canon(data),
+				H.canon(installed)
+			)
+		),
+		1,
+		msg
+	)
 end)
 
 -- The plugin and server.lua both require util, so a directory holding
@@ -159,7 +204,18 @@ fixture("an override without util.lua raises, naming the copy util resolves to",
 	local partial = base .. "/partial"
 	stub(partial, { "server" })
 	code, out = child(helpers_path, "H.rtp()", partial, { XDG_DATA_HOME = data })
-	eq(ruling(code, out, ("live-server.nvim at %s does not resolve: %s/lua/live_server/util.lua"):format(H.canon(partial), H.canon(installed))), 1, msg)
+	eq(
+		ruling(
+			code,
+			out,
+			("live-server.nvim at %s does not resolve: %s/lua/live_server/util.lua"):format(
+				H.canon(partial),
+				H.canon(installed)
+			)
+		),
+		1,
+		msg
+	)
 end)
 
 -- A comma in the checkout's own path splits its entry, and require loaded an
@@ -170,7 +226,18 @@ fixture("a checkout whose path the runtimepath splits raises, naming the install
 	vim.fn.mkdir(installed_mp .. "/lua/markdown_preview", "p")
 	H.write_file(installed_mp .. "/lua/markdown_preview/init.lua", "return {}\n")
 	code, out = child(tree(split), "H.rtp()", "", { XDG_DATA_HOME = data })
-	eq(ruling(code, out, ("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(H.canon(split), H.canon(installed_mp))), 1, msg)
+	eq(
+		ruling(
+			code,
+			out,
+			("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(
+				H.canon(split),
+				H.canon(installed_mp)
+			)
+		),
+		1,
+		msg
+	)
 end)
 
 -- The live-server directory goes before the checkout on the runtimepath, so
@@ -182,7 +249,15 @@ fixture("a live-server directory that carries this plugin's modules raises, nami
 	vim.fn.mkdir(dep .. "/lua/markdown_preview", "p")
 	H.write_file(dep .. "/lua/markdown_preview/init.lua", 'error("DEP COPY OF markdown_preview LOADED")\n')
 	code, out = child(helpers_path, 'H.rtp()\nrequire("markdown_preview")\nH.ok(true, "loaded")\nH.finish()', dep)
-	eq(ruling(code, out, ("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(H.root, H.canon(dep))), 1, msg)
+	eq(
+		ruling(
+			code,
+			out,
+			("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(H.root, H.canon(dep))
+		),
+		1,
+		msg
+	)
 end)
 
 -- The loader tries lua/<mod>.lua before lua/<mod>/init.lua in each entry,
@@ -195,8 +270,16 @@ for _, shadow in ipairs({ "lua/markdown_preview.lua", "lua/markdown_preview/lock
 		stub(dep)
 		vim.fn.mkdir(vim.fs.dirname(dep .. "/" .. shadow), "p")
 		H.write_file(dep .. "/" .. shadow, 'error("SHADOW COPY LOADED")\n')
-		code, out = child(helpers_path, 'H.rtp()\nrequire("markdown_preview")\nrequire("markdown_preview.lock")\nH.ok(true, "loaded")\nH.finish()', dep)
-		eq(ruling(code, out, ("the checkout at %s does not resolve: %s/%s"):format(H.root, H.canon(dep), shadow)), 1, msg)
+		code, out = child(
+			helpers_path,
+			'H.rtp()\nrequire("markdown_preview")\nrequire("markdown_preview.lock")\nH.ok(true, "loaded")\nH.finish()',
+			dep
+		)
+		eq(
+			ruling(code, out, ("the checkout at %s does not resolve: %s/%s"):format(H.root, H.canon(dep), shadow)),
+			1,
+			msg
+		)
 	end)
 end
 
@@ -207,7 +290,12 @@ stub(plain)
 -- and the path comes back canonical (on macOS /private/var, not /var).
 fixture("an override reached through .. comes back normalized", function(msg)
 	vim.fn.mkdir(base .. "/sub", "p")
-	out = succeeded(msg, helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/sub/../plain")
+	out = succeeded(
+		msg,
+		helpers_path,
+		'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		base .. "/sub/../plain"
+	)
 	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
 end)
 
@@ -215,14 +303,22 @@ end)
 -- the 8.3 form the parent gave it (the first hosted run), so both sides are
 -- canonical.
 fixture("a relative override comes back absolute", function(msg)
-	out = succeeded(msg, helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', "plain", nil, base)
+	out = succeeded(
+		msg,
+		helpers_path,
+		'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		"plain",
+		nil,
+		base
+	)
 	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
 end)
 
 -- An absolute override under the temp root comes back as the filesystem
 -- names it (/private/var on macOS, the long name on Windows), not as typed.
 fixture("an absolute override comes back canonical", function(msg)
-	out = succeeded(msg, helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/plain")
+	out =
+		succeeded(msg, helpers_path, 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', base .. "/plain")
 	eq(printed(out, "found"), H.canon(base .. "/plain"), msg)
 end)
 
@@ -241,7 +337,12 @@ fixture("a symlinked checkout finds its physical sibling", function(msg)
 		H.skip(msg .. " (no directory symlink here: " .. tostring(err or "the link does not resolve") .. ")")
 		return
 	end
-	out = succeeded(msg, link .. "/tests/helpers.lua", 'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()', "")
+	out = succeeded(
+		msg,
+		link .. "/tests/helpers.lua",
+		'print("found=" .. H.rtp())\nH.ok(true, "reached")\nH.finish()',
+		""
+	)
 	eq(printed(out, "found"), H.canon(phys .. "/live-server.nvim"), msg)
 end)
 
@@ -252,12 +353,21 @@ fixture("./live-server-rtp beats the sibling clone", function(msg)
 	local helpers = tree(root)
 	stub(root .. "/live-server-rtp")
 	stub(base .. "/order/live-server.nvim")
-	out = succeeded(msg, helpers, [[
+	out = succeeded(
+		msg,
+		helpers,
+		[[
 H.rtp()
 print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
-H.finish()]], "")
-	eq(out:match("live%-server%.nvim: ([^\r\n]*)"), H.canon(root .. "/live-server-rtp"), msg .. ": the printed line names it")
+H.finish()]],
+		""
+	)
+	eq(
+		out:match("live%-server%.nvim: ([^\r\n]*)"),
+		H.canon(root .. "/live-server-rtp"),
+		msg .. ": the printed line names it"
+	)
 	eq(loaded(out), H.canon(root .. "/live-server-rtp/lua/live_server/server.lua"), msg .. ": require loads it")
 end)
 
@@ -269,11 +379,17 @@ fixture("the chosen live-server beats an installed copy", function(msg)
 		H.skip(msg .. " (no live-server found: " .. tostring(real_ls):gsub("\n.*", "") .. ")")
 		return
 	end
-	out = succeeded(msg, helpers_path, [[
+	out = succeeded(
+		msg,
+		helpers_path,
+		[[
 H.rtp()
 print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
-H.finish()]], real_ls, { XDG_DATA_HOME = data })
+H.finish()]],
+		real_ls,
+		{ XDG_DATA_HOME = data }
+	)
 	eq(loaded(out), H.canon(real_ls .. "/lua/live_server/server.lua"), msg)
 end)
 
@@ -282,14 +398,21 @@ end)
 local ci_checkout = H.root .. "/live-server-rtp"
 local sibling = vim.fs.dirname(H.root) .. "/live-server.nvim"
 if vim.fn.isdirectory(ci_checkout) == 1 or vim.fn.isdirectory(sibling) == 1 then
-	out = succeeded("the default path", helpers_path, [[
+	out = succeeded(
+		"the default path",
+		helpers_path,
+		[[
 print("found=" .. H.rtp())
 print("source=" .. debug.getinfo(require("live_server.server").start, "S").source)
 H.ok(true, "reached")
-H.finish()]], "")
+H.finish()]],
+		""
+	)
 	local found = printed(out, "found")
-	ok(found ~= nil and loaded(out) == H.canon(found .. "/lua/live_server/server.lua"),
-		"the default path: require loads from the directory H.rtp() prints")
+	ok(
+		found ~= nil and loaded(out) == H.canon(found .. "/lua/live_server/server.lua"),
+		"the default path: require loads from the directory H.rtp() prints"
+	)
 else
 	H.skip("the default path (neither " .. ci_checkout .. " nor " .. sibling .. " exists)")
 end

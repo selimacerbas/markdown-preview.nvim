@@ -46,7 +46,10 @@ local function sits_under(path, dir)
 	end
 	return false
 end
-ok(workspace ~= "" and sits_under(workspace, vim.fn.stdpath("cache")), "the plugin's workspace sits under the isolated cache: " .. workspace)
+ok(
+	workspace ~= "" and sits_under(workspace, vim.fn.stdpath("cache")),
+	"the plugin's workspace sits under the isolated cache: " .. workspace
+)
 local written = {}
 for _, cache in ipairs(startup_caches) do
 	local dir = vim.fs.joinpath(cache, "markdown-preview", vim.fs.basename(workspace))
@@ -69,8 +72,10 @@ ok(type(port) == "number" and port > 0, "server bound to a port")
 -- Static index reachable without token
 local r = http_get(("http://127.0.0.1:%d/"):format(port))
 eq(r.status, 200, "/ (index) is 200 without token")
-ok(r.body:find("data%-live%-token=\"" .. mp._token .. "\"") ~= nil,
-	"index.html has data-live-token attribute set to current token")
+ok(
+	r.body:find('data%-live%-token="' .. mp._token .. '"') ~= nil,
+	"index.html has data-live-token attribute set to current token"
+)
 
 -- content.md is gated
 r = http_get(("http://127.0.0.1:%d/content.md"):format(port))
@@ -93,7 +98,9 @@ ok(mp._server_instance == nil, "_server_instance cleared after stop")
 -- hosted Windows run read 28 here, taken as its two-second retry of a
 -- refused loopback connect, which H.http_get's connect bound now waits out;
 -- the next Windows run is the measurement of 7 there.
-vim.wait(200, function() return false end)
+vim.wait(200, function()
+	return false
+end)
 r = http_get(("http://127.0.0.1:%d/"):format(port))
 eq(r.curl_exit, 7, "the port refuses connections after stop")
 

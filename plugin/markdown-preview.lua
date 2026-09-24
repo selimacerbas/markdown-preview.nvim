@@ -16,4 +16,3 @@ end, {})
 vim.api.nvim_create_user_command("MarkdownPreviewStop", function()
 	require("markdown_preview").stop()
 end, {})
-

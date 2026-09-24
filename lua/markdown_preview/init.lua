@@ -87,13 +87,17 @@ M._debounce_seq = 0
 M._workspace_dir = nil
 M._mmdr_available = nil -- nil = unchecked, true/false after probe
 M._last_scroll_line = nil
-M._is_primary = nil      -- true/false/nil (takeover mode)
-M._takeover_port = nil   -- port of primary server (secondary uses for HTTP events)
-M._token = nil           -- live-server auth token (primary owns; secondaries read from lockfile)
+M._is_primary = nil -- true/false/nil (takeover mode)
+M._takeover_port = nil -- port of primary server (secondary uses for HTTP events)
+M._token = nil -- live-server auth token (primary owns; secondaries read from lockfile)
 
 local function effective_port()
-	if M.config.port ~= 0 then return M.config.port end
-	if M.config.instance_mode == "takeover" then return 8421 end
+	if M.config.port ~= 0 then
+		return M.config.port
+	end
+	if M.config.instance_mode == "takeover" then
+		return 8421
+	end
 	return 0
 end
 
@@ -132,8 +136,12 @@ local function write_index(dir)
 
 	-- gsub with function replacement: avoids the "%n is a capture reference"
 	-- escape problem if any substituted value contains '%'.
-	content = content:gsub("__BOTTOM_PADDING__", function() return tostring(M.config.bottom_padding) end)
-	content = content:gsub("__MERMAID_ELK__", function() return M.config.mermaid_elk and "true" or "false" end)
+	content = content:gsub("__BOTTOM_PADDING__", function()
+		return tostring(M.config.bottom_padding)
+	end)
+	content = content:gsub("__MERMAID_ELK__", function()
+		return M.config.mermaid_elk and "true" or "false"
+	end)
 	-- Anchor to the attribute: index.html also contains the bare placeholder
 	-- as a JS sentinel, and substituting that too breaks auth (issue #31).
 	-- Bake the token only on loopback binds: on a network bind the index is
@@ -142,13 +150,17 @@ local function write_index(dir)
 	content = content:gsub('data%-live%-token="__LIVE_TOKEN__"', function()
 		return 'data-live-token="' .. (host_is_loopback() and M._token or "") .. '"'
 	end)
-	content = content:gsub("__THEME__", function() return M.config.default_theme end)
+	content = content:gsub("__THEME__", function()
+		return M.config.default_theme
+	end)
 	content = content:gsub("__ALLOW_HTML__", function()
 		return M.config.allow_raw_html ~= false and "true" or "false"
 	end)
 	content = content:gsub("__YAML_MODE__", function()
 		local m = M.config.yaml_mode
-		if m ~= "hide" and m ~= "raw" then m = "panel" end
+		if m ~= "hide" and m ~= "raw" then
+			m = "panel"
+		end
 		return m
 	end)
 
@@ -344,8 +356,7 @@ local function get_content(bufnr)
 	if ft == "markdown" then
 		local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 		text = table.concat(lines, "\n")
-	elseif vim.api.nvim_buf_get_name(bufnr):match("%.mmd$")
-        or vim.api.nvim_buf_get_name(bufnr):match("%.mermaid$") then
+	elseif vim.api.nvim_buf_get_name(bufnr):match("%.mmd$") or vim.api.nvim_buf_get_name(bufnr):match("%.mermaid$") then
 		-- .mmd / .mermaid files: treat entire buffer as mermaid
 		local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 		text = "```mermaid\n" .. table.concat(lines, "\n") .. "\n```\n"
@@ -443,9 +454,13 @@ end
 
 --- Send cursor line to browser for scroll sync.
 local function send_scroll_sync(bufnr)
-	if not M.config.scroll_sync then return end
+	if not M.config.scroll_sync then
+		return
+	end
 	local cursor_line = vim.api.nvim_win_get_cursor(0)[1] -- 1-based
-	if cursor_line == M._last_scroll_line then return end
+	if cursor_line == M._last_scroll_line then
+		return
+	end
 	M._last_scroll_line = cursor_line
 	local total = vim.api.nvim_buf_line_count(bufnr)
 	local payload = vim.json.encode({ line = cursor_line - 1, total = total })
@@ -483,7 +498,9 @@ local function set_autocmds_for_buffer(bufnr)
 		vim.api.nvim_create_autocmd(ev, {
 			group = M._augroup,
 			buffer = bufnr,
-			callback = function() send_scroll_sync(bufnr) end,
+			callback = function()
+				send_scroll_sync(bufnr)
+			end,
 			desc = "Markdown Preview scroll sync",
 		})
 	end
@@ -497,10 +514,16 @@ end
 -- (no packets are sent; it just lets the kernel pick the right interface).
 local function lan_ip()
 	local udp = vim.loop.new_udp()
-	if not udp then return "127.0.0.1" end
-	local ok = pcall(function() udp:connect("8.8.8.8", 80) end)
+	if not udp then
+		return "127.0.0.1"
+	end
+	local ok = pcall(function()
+		udp:connect("8.8.8.8", 80)
+	end)
 	local addr = ok and udp:getsockname()
-	pcall(function() udp:close() end)
+	pcall(function()
+		udp:close()
+	end)
 	return (addr and addr.ip) or "127.0.0.1"
 end
 
@@ -639,9 +662,13 @@ function M.start()
 			-- buffer switches retarget it via the sidecar.
 			asset_root = function()
 				local ws = M._workspace_dir
-				if not ws then return nil end
+				if not ws then
+					return nil
+				end
 				local ok_read, data = pcall(util.read_text, vim.fs.joinpath(ws, "asset_root"))
-				if not ok_read or not data or data == "" then return nil end
+				if not ok_read or not data or data == "" then
+					return nil
+				end
 				return (data:gsub("%s+$", ""))
 			end,
 		})

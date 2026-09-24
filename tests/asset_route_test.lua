@@ -16,8 +16,10 @@ local uv = vim.uv or vim.loop
 local ls_server = require("live_server.server")
 
 H.section("Section 1: the installed live-server is at or above the floor")
-H.ok(type(ls_server.features) == "table" and ls_server.features.asset_route == true,
-	"live-server exports features.asset_route (v1.5.0 or newer)")
+H.ok(
+	type(ls_server.features) == "table" and ls_server.features.asset_route == true,
+	"live-server exports features.asset_route (v1.5.0 or newer)"
+)
 
 local dir = H.tmpdir()
 H.write_file(dir .. "/pic.png", "PNGDATA")
@@ -38,13 +40,19 @@ H.eq(H.http_get(base .. "/__live/asset?p=pic.png&t=wrong").status, 401, "asset w
 local r = H.http_get(base .. "/__live/asset?p=pic.png&t=" .. mp._token)
 H.eq(r.status, 200, "asset with the token is 200")
 H.eq(r.body, "PNGDATA", "asset body is the file beside the document")
-H.eq(H.http_get(base .. "/__live/asset?p=../outside.txt&t=" .. mp._token).status, 404,
-	"a path above the document's directory is 404")
+H.eq(
+	H.http_get(base .. "/__live/asset?p=../outside.txt&t=" .. mp._token).status,
+	404,
+	"a path above the document's directory is 404"
+)
 -- Containment is by the resolved path, not the spelling: a lexical check
 -- served a link like this one (measured on a live-server mutant).
 if uv.fs_symlink("../outside.txt", dir .. "/link.txt") then
-	H.eq(H.http_get(base .. "/__live/asset?p=link.txt&t=" .. mp._token).status, 404,
-		"a symlink beside the document pointing above it is 404")
+	H.eq(
+		H.http_get(base .. "/__live/asset?p=link.txt&t=" .. mp._token).status,
+		404,
+		"a symlink beside the document pointing above it is 404"
+	)
 else
 	H.skip("a symlink beside the document pointing above it is 404 (fs_symlink failed on this platform)")
 end

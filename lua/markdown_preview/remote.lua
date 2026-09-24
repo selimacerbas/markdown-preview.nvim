@@ -10,15 +10,21 @@ function M.send_event(port, event_type, json_data, token)
 	if token and token ~= "" then
 		query = query .. "&t=" .. vim.uri_encode(token)
 	end
-	local req = string.format(
-		"GET /__live/inject?%s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
-		query
-	)
+	local req = string.format("GET /__live/inject?%s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", query)
 	tcp:connect("127.0.0.1", port, function(err)
-		if err then pcall(function() tcp:close() end); return end
+		if err then
+			pcall(function()
+				tcp:close()
+			end)
+			return
+		end
 		tcp:write(req, function()
-			pcall(function() tcp:shutdown() end)
-			pcall(function() tcp:close() end)
+			pcall(function()
+				tcp:shutdown()
+			end)
+			pcall(function()
+				tcp:close()
+			end)
 		end)
 	end)
 end
