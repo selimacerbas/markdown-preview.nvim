@@ -5,10 +5,10 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly: catches Neovim nightly drift and live-server.nvim main drift. In a
-    # public repository GitHub disables
-    # the whole workflow after 60 days without a commit; re-enable it from the
-    # Actions tab (or gh workflow enable ci) when that happens.
+    # Weekly: catches Neovim nightly drift and live-server.nvim main drift. In
+    # a public repository GitHub disables the whole workflow after 60 days
+    # without a commit; re-enable it from the Actions tab (or gh workflow
+    # enable ci) when that happens.
     - cron: "17 5 * * 1"
   workflow_dispatch:
 
@@ -58,8 +58,8 @@ jobs:
       - name: Assert the markdown Tree-sitter parser
         run: >-
           nvim --headless -u NONE
-          -c 'lua local ok = pcall(vim.treesitter.get_string_parser, "# x", "markdown");
-          if not ok then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
+          -c 'lua local ok, p = pcall(vim.treesitter.get_string_parser, "# x", "markdown");
+          if not (ok and p) then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
           -c 'qa!'
       # -l exits 1 on a Lua error in the main chunk, where the luafile form the
       # tests once documented exited 0; a failed assertion and an error raised
@@ -90,6 +90,14 @@ jobs:
           version: v0.10.0
       - name: Version
         run: nvim --version | head -n 3
+      # Release builds bundle the markdown parser since 0.10, so this asserts
+      # it instead of installing it; a -c Lua error alone would exit 0.
+      - name: Assert the markdown Tree-sitter parser
+        run: >-
+          nvim --headless -u NONE
+          -c 'lua local ok, p = pcall(vim.treesitter.get_string_parser, "# x", "markdown");
+          if not (ok and p) then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
+          -c 'qa!'
       - name: Headless tests
         run: bash tests/run.sh
 
@@ -99,7 +107,7 @@ jobs:
   # PR never shows an upstream nightly break.
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    name: nightly (${{ matrix.os }})
+    name: nightly (${{ matrix.os }}, live-server main)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
