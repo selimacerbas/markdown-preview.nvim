@@ -1,0 +1,188 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: catches Neovim nightly drift and live-server.nvim main drift. In a
+    # public repository GitHub disables
+    # the whole workflow after 60 days without a commit; re-enable it from the
+    # Actions tab (or gh workflow enable ci) when that happens.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A PR's superseded run is cancelled; a push, the schedule and a manual run
+  # each get their own group, so no verdict on main is ever cancelled or
+  # replaced (GitHub replaces a pending run in a shared group even with
+  # cancel-in-progress false).
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, nvim ${{ matrix.nvim }}, live-server ${{ matrix.live_server }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        nvim: [stable]
+        # v1.5.0 is the floor the README and the v1.10.0 notes promise;
+        # main is what a fresh install pulls.
+        live_server: [v1.5.0, main]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: ${{ matrix.live_server }}
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim }}
+      - name: Version
+        run: nvim --version | head -n 3
+      # Release builds bundle the markdown parser since 0.10, so this asserts
+      # it instead of installing it; a -c Lua error alone would exit 0.
+      - name: Assert the markdown Tree-sitter parser
+        run: >-
+          nvim --headless -u NONE
+          -c 'lua local ok = pcall(vim.treesitter.get_string_parser, "# x", "markdown");
+          if not ok then io.stderr:write("markdown parser missing\n"); vim.cmd("cq 1") end'
+          -c 'qa!'
+      # -l exits 1 on a Lua error in the main chunk, where the luafile form the
+      # tests once documented exited 0; a failed assertion and an error raised
+      # in a callback reach the exit code through H.finish() (tests/helpers.lua).
+      - name: Headless tests
+        run: bash tests/run.sh
+
+  # The floor this plugin requires (the README states it from the floor
+  # commit on): the first 0.10 release, not its last patch.
+  floor:
+    name: floor (ubuntu-latest, nvim v0.10.0, live-server main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: main
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: v0.10.0
+      - name: Version
+        run: nvim --version | head -n 3
+      - name: Headless tests
+        run: bash tests/run.sh
+
+  # Drift detection reports, it does not gate a merge: an upstream nightly
+  # break is not this plugin's regression. The weekly cron is its reason to
+  # exist, so it stays outside ci-ok. It runs on the cron and by hand only, so a
+  # PR never shows an upstream nightly break.
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: nightly (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: main
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: nightly
+      - name: Version
+        run: nvim --version | head -n 3
+      - name: Headless tests
+        run: bash tests/run.sh
+
+  # Measures that the suites run on Windows at all; the token fallback (no
+  # /dev/urandom) and NTFS case folding get their own assertions in the
+  # security arc. It reports and joins ci-ok once it has been green
+  # (Follow-on F-01).
+  windows:
+    name: windows (nvim stable, live-server main)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/helpers.lua looks for live-server.nvim at ./live-server-rtp.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: main
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: stable
+      - name: Version
+        run: nvim --version | head -n 3
+      - name: Headless tests
+        run: bash tests/run.sh
+
+  lint-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
+        with:
+          args: -color
+
+  # The one status check branch protection is meant to require (an operator
+  # step later). Each gating job is named, so an empty or shortened needs list
+  # cannot pass.
+  ci-ok:
+    if: always()
+    needs: [test, floor, lint-workflows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every gating job succeeded
+        env:
+          TEST: ${{ needs.test.result }}
+          FLOOR: ${{ needs.floor.result }}
+          LINT: ${{ needs.lint-workflows.result }}
+        run: |
+          echo "test=$TEST floor=$FLOOR lint-workflows=$LINT"
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$LINT" = success ]

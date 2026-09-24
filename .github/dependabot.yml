@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # A hijacked or broken action release gets a week to be caught before a
+    # bump PR proposes it.
+    cooldown:
+      default-days: 7
