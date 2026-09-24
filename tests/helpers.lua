@@ -96,8 +96,10 @@ end
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
     -- Every module the checkout ships, since a copy elsewhere can shadow any
-    -- one of them; vim.fs.dir reads H.root literally, where glob() would
-    -- read a glob character in it.
+    -- one of them; vim.fs.dir does not glob, where glob() would read a glob
+    -- character in H.root (it does expand an environment variable in the
+    -- path, and the runtimepath expands it the same way, so that root fails
+    -- the proof below either way).
     local modules = { "markdown_preview" }
     for name, kind in vim.fs.dir(H.root .. "/lua/markdown_preview") do
         local base = name:match("^(.+)%.lua$")
