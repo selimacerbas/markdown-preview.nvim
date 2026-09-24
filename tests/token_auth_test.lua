@@ -35,8 +35,11 @@ local ok, eq, http_get = H.ok, H.eq, H.http_get
 -- H.isolate raises when stdpath does not follow the variables; what it cannot
 -- see is where the plugin writes.
 H.section("Section 0: isolation")
-local workspace = mp._workspace_dir or ""
-ok(vim.startswith(workspace, vim.fn.stdpath("cache") .. "/"), "the plugin's workspace sits under the isolated cache: " .. workspace)
+-- joinpath writes / where stdpath keeps Windows's backslashes, so both sides
+-- are normalized before the compare.
+local workspace = vim.fs.normalize(mp._workspace_dir or "", { expand_env = false })
+local isolated_cache = vim.fs.normalize(vim.fn.stdpath("cache"), { expand_env = false })
+ok(vim.startswith(workspace, isolated_cache .. "/"), "the plugin's workspace sits under the isolated cache: " .. workspace)
 local written = {}
 for _, cache in ipairs(startup_caches) do
 	local dir = vim.fs.joinpath(cache, "markdown-preview", vim.fs.basename(workspace))

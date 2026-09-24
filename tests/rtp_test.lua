@@ -147,6 +147,18 @@ fixture("a checkout whose path the runtimepath splits raises, naming the install
 	eq(ruling(code, out, ("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(split, installed_mp)), 1, msg)
 end)
 
+-- The live-server directory goes before the checkout on the runtimepath, so
+-- one that also carries this plugin's modules answered require while every
+-- proof passed (measured); the root is proven again after the prepend.
+fixture("a live-server directory that carries this plugin's modules raises, naming them", function(msg)
+	local dep = base .. "/dep"
+	stub(dep)
+	vim.fn.mkdir(dep .. "/lua/markdown_preview", "p")
+	H.write_file(dep .. "/lua/markdown_preview/init.lua", 'error("DEP COPY OF markdown_preview LOADED")\n')
+	code, out = child(helpers_path, 'H.rtp()\nrequire("markdown_preview")\nH.ok(true, "loaded")\nH.finish()', dep)
+	eq(ruling(code, out, ("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(H.root, dep)), 1, msg)
+end)
+
 H.section("Section 2: the directory H.rtp() chooses and the path it returns")
 local plain = base .. "/plain"
 stub(plain)
