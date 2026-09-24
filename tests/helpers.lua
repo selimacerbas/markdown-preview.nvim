@@ -42,7 +42,11 @@ end
 -- a .. after a symlinked directory resolves through the filesystem as the
 -- kernel reads it, also while a later name is missing; a .. or . left in the
 -- missing tail folds by name, and the result is resolved once more in case
--- the fold landed on a link.
+-- the fold landed on a link. The one shape that still moves once made is a
+-- missing name followed by a link and a .. (missing/../link/../x): the fold
+-- by name crosses the link before it exists to the filesystem walk. No
+-- suite builds one; resolving the tail one component at a time is the fix
+-- (the plan's F-16).
 function H.canon(path)
     require_path("H.canon", path)
     local full = vim.fn.fnamemodify(path, ":p")
