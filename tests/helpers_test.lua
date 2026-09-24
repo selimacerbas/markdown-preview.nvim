@@ -556,12 +556,20 @@ eq(
     canon_p .. "/nope/deeper",
     "a missing name resolves through its deepest existing ancestor"
 )
+-- The root is the one existing ancestor that ends in a separator.
+eq(H.canon("/nope-canon-xyz/a"), H.canon("/") .. "nope-canon-xyz/a", "a missing name under the root gets one separator")
+eq(H.canon("~/nope-canon-xyz"), H.canon(vim.fn.expand("~")) .. "/nope-canon-xyz", "a leading ~ is the home directory")
 -- normalize expands $VAR unless told not to, and a $ in a directory's name
 -- is a character: a message names the directory that exists
--- (markdown-preview's rtp_test override case).
-assert(uv.fs_mkdir(p .. "/odd$HOME-x", 493))
-eq(H.canon(p .. "/odd$HOME-x"), canon_p .. "/odd$HOME-x", "a $ in an existing name stays a character")
-eq(H.canon(p .. "/gone$HOME-y"), canon_p .. "/gone$HOME-y", "a $ in a missing name stays a character")
+-- (markdown-preview's rtp_test override case). A file system that refuses
+-- the name skips both, measured by the mkdir itself, as rtp_test does.
+local odd_made, odd_err = uv.fs_mkdir(p .. "/odd$HOME-x", 493)
+if odd_made then
+    eq(H.canon(p .. "/odd$HOME-x"), canon_p .. "/odd$HOME-x", "a $ in an existing name stays a character")
+    eq(H.canon(p .. "/gone$HOME-y"), canon_p .. "/gone$HOME-y", "a $ in a missing name stays a character")
+else
+    H.skip("a $ in a name stays a character (this file system refuses the name: " .. tostring(odd_err) .. ")")
+end
 local unstable = {}
 for _, name in ipairs({ p, p .. "/phys/../phys", p .. "/nope", p .. "/missing/../phys", p .. "/odd$HOME-x", "." }) do
     if H.canon(H.canon(name)) ~= H.canon(name) then
@@ -570,12 +578,18 @@ for _, name in ipairs({ p, p .. "/phys/../phys", p .. "/nope", p .. "/missing/..
 end
 eq(table.concat(unstable, ", "), "", "a second pass changes nothing")
 -- Windows makes a file link unless told dir. A .. after a link resolves from
--- the link's target on POSIX, as :p reads it through the filesystem; Win32
--- resolves it by name before the filesystem sees it.
+-- the link's target on POSIX, as the filesystem reads it, also while a later
+-- name is missing, so creating that name does not move the path; Win32
+-- resolves .. by name before the filesystem sees it.
 local link = p .. "/links/t"
 local linked, link_err = uv.fs_symlink(p .. "/phys/t", link, { dir = true })
 if linked and uv.fs_stat(link) then
     eq(H.canon(link), canon_p .. "/phys/t", "a directory symlink folds to its target")
+    eq(
+        H.canon(p .. "/missing/../links/t"),
+        canon_p .. "/phys/t",
+        "a missing name folded away by .. still resolves the link it lands on"
+    )
     if vim.fn.has("win32") == 1 then
         H.skip("a .. after a directory symlink resolves from its target (Win32 resolves .. by name)")
     else
@@ -583,6 +597,17 @@ if linked and uv.fs_stat(link) then
             H.canon(link .. "/../only-phys"),
             canon_p .. "/phys/only-phys",
             "a .. after a directory symlink resolves from its target"
+        )
+        eq(
+            H.canon(link .. "/../later/leaf"),
+            canon_p .. "/phys/later/leaf",
+            "a .. after a directory symlink resolves from its target while a later name is missing"
+        )
+        vim.fn.mkdir(p .. "/phys/later", "p")
+        eq(
+            H.canon(link .. "/../later/leaf"),
+            canon_p .. "/phys/later/leaf",
+            "creating the missing name leaves that path where it was"
         )
     end
 else
@@ -601,11 +626,42 @@ eq(
     vim.fn.has("win32") == 1,
     "two cases of a missing name are one path on Windows only"
 )
-local function refused(fn, ...)
-    local done, err = pcall(fn, ...)
-    return not done and tostring(err):find("non%-empty string") ~= nil
+-- The raise names the suite's own line: the one inside call, found by the
+-- file and the line range debug.getinfo gives for it.
+local function blames_caller(call)
+    local done, err = pcall(call)
+    local where = debug.getinfo(call, "S")
+    local src, line = tostring(err):match("^(.-):(%d+): H%.[%w_]+: a path is a non%-empty string")
+    line = tonumber(line)
+    return not done
+        and src == where.short_src
+        and line ~= nil
+        and line >= where.linedefined
+        and line <= where.lastlinedefined
 end
-ok(refused(H.canon, nil) and refused(H.canon, ""), "H.canon refuses nil and an empty string")
-ok(refused(H.same_path, nil, nil) and refused(H.same_path, p, ""), "H.same_path refuses nil and an empty string")
+ok(
+    blames_caller(function()
+        H.canon(nil)
+    end),
+    "H.canon refuses nil at the suite's line"
+)
+ok(
+    blames_caller(function()
+        H.canon("")
+    end),
+    "H.canon refuses an empty string at the suite's line"
+)
+ok(
+    blames_caller(function()
+        H.same_path(nil, nil)
+    end),
+    "H.same_path refuses nil at the suite's line"
+)
+ok(
+    blames_caller(function()
+        H.same_path(p, "")
+    end),
+    "H.same_path refuses an empty second name at the suite's line"
+)
 
 H.finish()

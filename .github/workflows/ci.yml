@@ -174,8 +174,8 @@ jobs:
     name: nightly (${{ matrix.os }}, live-server main)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
-    # No continue-on-error: a schedule-only run gates nothing, and its failed
-    # conclusion is the drift signal GitHub notifies the operator of.
+    # No continue-on-error: it runs on the cron and by hand, gates nothing,
+    # and its failed conclusion is the drift signal GitHub notifies of.
     strategy:
       fail-fast: false
       matrix:

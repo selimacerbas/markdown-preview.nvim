@@ -20,43 +20,68 @@ local real_exit = os.exit
 
 local is_win = vim.fn.has("win32") == 1
 
--- One spelling per file, so a suite compares names by value and a message
--- prints the name a test builds: absolute (a .. resolved by :p through the
--- filesystem, as the kernel reads it), then the name the filesystem gives
--- (it folds a symlink, /var against /private/var on macOS and an 8.3 short
--- name such as RUNNER~1, which tempname() returns on Windows), with forward
--- slashes, no trailing one and a $ kept literal. realpath needs the path to
--- exist, so a name not yet created resolves through its deepest existing
--- ancestor: it reads the same before and after it is made, and a second
--- pass changes nothing. A nil or empty name raises, where :p would read it
--- as a file named v:null or as the working directory and a comparison would
--- pass by accident.
-function H.canon(path)
+-- A nil or empty name raises at the suite's line (level 3: past this check
+-- and the helper that called it), where :p would read it as a file named
+-- v:null or as the working directory and a comparison would pass by accident.
+local function require_path(fn, path)
     if type(path) ~= "string" or path == "" then
-        error(("H.canon: a path is a non-empty string, not %s"):format(vim.inspect(path)), 2)
+        error(("%s: a path is a non-empty string, not %s"):format(fn, vim.inspect(path)), 3)
     end
-    local full = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"), { expand_env = false })
-    local head, tail = full, {}
+end
+
+-- One spelling per file, so a suite compares names by value and a message
+-- prints the name a test builds: absolute (:p, a leading ~ expanded), then
+-- the name the filesystem gives (it folds a symlink, /var against
+-- /private/var on macOS and an 8.3 short name such as RUNNER~1, which
+-- tempname() returns on Windows), with forward slashes, no trailing one and
+-- a $ kept literal. realpath needs the path to exist, so a name not yet
+-- created resolves through its deepest existing ancestor: it reads the same
+-- before and after it is made (a dangling link reads as a missing name, so
+-- making its target does move a path through it), and a second pass
+-- changes nothing. The walk runs on the :p form before any fold by name, so
+-- a .. after a symlinked directory resolves through the filesystem as the
+-- kernel reads it, also while a later name is missing; a .. or . left in the
+-- missing tail folds by name, and the result is resolved once more in case
+-- the fold landed on a link.
+function H.canon(path)
+    require_path("H.canon", path)
+    local full = vim.fn.fnamemodify(path, ":p")
+    if is_win then
+        full = full:gsub("\\", "/")
+    end
+    local head, tail, folded = full, {}, false
     while true do
         local real = uv.fs_realpath(head)
         if real then
-            real = vim.fs.normalize(real, { expand_env = false })
             if #tail == 0 then
-                return real
+                return vim.fs.normalize(real, { expand_env = false })
             end
-            return (real:sub(-1) == "/" and real or real .. "/") .. table.concat(tail, "/")
+            -- realpath ends in a separator only at a root, which must not
+            -- double into a UNC-looking //.
+            local sep = (real:sub(-1) == "/" or (is_win and real:sub(-1) == "\\")) and "" or "/"
+            local joined = vim.fs.normalize(real .. sep .. table.concat(tail, "/"), { expand_env = false })
+            if folded then
+                return H.canon(joined)
+            end
+            return joined
         end
         local parent = vim.fs.dirname(head)
         if parent == head then
-            return full
+            return vim.fs.normalize(full, { expand_env = false })
         end
-        table.insert(tail, 1, vim.fs.basename(head))
+        local name = vim.fs.basename(head)
+        if name ~= "" then
+            table.insert(tail, 1, name)
+            folded = folded or name == "." or name == ".."
+        end
         head = parent
     end
 end
 
 -- Whether two names denote one file; Windows file systems fold case.
 function H.same_path(a, b)
+    require_path("H.same_path", a)
+    require_path("H.same_path", b)
     a, b = H.canon(a), H.canon(b)
     if is_win then
         return a:lower() == b:lower()
