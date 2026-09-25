@@ -72,6 +72,10 @@ judge 'policy: - reads a clean stdin' "$?" 0
 "$policy" "$tmp/no-such-file" 2>"$tmp/err"
 judge 'policy: a missing file cannot be judged' "$?" 2 'is not a readable file'
 pol 'Latin-1 bytes and no violation' 0 '' "$(printf 'Fix caf\351 na\357ve\n\nR\351sum\351 \344\366\374')"
+# A pull request that keeps the template carries it as its body, which the
+# commits job judges.
+"$policy" "$src/.github/PULL_REQUEST_TEMPLATE.md" 2>"$tmp/err"
+judge 'policy: the pull request template passes' "$?" 0
 
 echo 'Section 2: the hook in a scratch repository'
 repo=$tmp/repo
