@@ -14,20 +14,21 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm. This f
 - `assets/index.html`: the browser preview app (CSS plus JS, one file)
 - `lazy.lua`: the spec lazy.nvim reads from this plugin, listing live-server.nvim alone; it stays in step with the README's lazy.nvim snippet
 - `tests/`: the headless suites, `helpers.lua` (the harness), `run.sh` (the runner) and `floor_smoke.sh` (the below-floor smoke)
+- `.githooks/commit-msg`: the hook `make hooks` copies into the clone; it runs `.githooks/message-policy`, the one message policy the CI `commits` job runs too; `tests/message_policy_test.sh` measures both (shared byte for byte with live-server.nvim, as is the Makefile)
 
 ## Sibling dependency
 
 - live-server.nvim (`selimacerbas/live-server.nvim`, cloned beside this repo as `../live-server.nvim`) is the pure Lua HTTP server with SSE this plugin drives; one maintainer edits both, and commits stay per repo.
 - The live-server floor is v1.5.0 in three places that move together: `H.live_server_floor` in `tests/helpers.lua`, and `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `.github/workflows/ci.yml`; the workflow's `live-server floor is the pinned tag` step reds when they disagree, and the gating test jobs run on that commit.
 - live-server exports `require("live_server.server").features` (`token_auth`, `host_binding`, `asset_route`); the plugin reads `asset_route` and warns once when it is missing.
-- APIs used: `server.start(cfg)` (an instance with `.port`), `server.stop(inst)`, `server.reload(inst, path)`, `server.send_event(inst, event, data)`, `server.update_target(inst, root, index)`, `server.connected_client_count(inst)`.
-- Endpoints used: `GET /__live/inject?event=<type>&data=<json>&t=<token>` (remote.lua) and `GET /__live/asset?p=<relpath>&t=<token>` (the preview page).
+- APIs used: `server.start(cfg)` (an instance with `.port`), `server.stop(inst)`, `server.reload(inst, path)`, `server.send_event(inst, event, data)`, `server.update_target(inst, root, index)`, `server.connected_client_count(inst)`, `server.features`, and `util.random_token(16)` from `live_server.util` (the session token).
+- Endpoints used: `GET /__live/inject?event=<type>&data=<json>&t=<token>` (remote.lua), and `GET /__live/events?t=<token>` (the event stream) and `GET /__live/asset?p=<relpath>&t=<token>` (the preview page).
 
 ## Architecture
 
-- Neovim writes the buffer to `content.md` in a workspace directory, by default (`workspace_dir` unset) under `stdpath("cache")/markdown-preview/`; live-server serves it and pushes SSE events (`reload` on change, `scroll` with the cursor line).
+- Neovim writes the buffer to `content.md` in a workspace directory under `stdpath("cache")/markdown-preview/` (takeover always; multi unless `workspace_dir` is set); live-server serves it and pushes SSE events (`reload` on change, `scroll` with the cursor line).
 - The browser renders with markdown-it, highlight.js, KaTeX and mermaid (loaded from CDNs) and diffs the DOM with morphdom.
-- Auth: a per-session token gates `content.md`, the `asset_root` sidecar, the SSE stream, the inject endpoint and the asset route; on a non-loopback `host` the index page is gated too and carries no token, which the browser takes from the `?t=` URL.
+- Auth: a per-session token gates five surfaces, `content.md`, the `asset_root` sidecar, the SSE stream, the inject endpoint and the asset route; on the loopback default the index page is not gated and carries the token (`data-live-token`), and on a non-loopback `host` the index page is gated too and carries no token, which the browser takes from the `?t=` URL.
 - Instance modes: `takeover` (the default; one shared workspace, port 8421 under the default `port = 0`, a lock file elects the primary) and `multi` (a per-buffer workspace, or `workspace_dir` when set, and a server per instance on an OS-assigned port under the default `port = 0`).
 - `mermaid_renderer = "rust"` pre-renders mermaid fences through the `mmdr` CLI; the default renders them in the browser.
 
@@ -36,15 +37,15 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm. This f
 - Neovim 0.10 or newer: `lua/markdown_preview/floor.lua` states the requirement and the message once, below it the plugin file and the module stop with that message, and CI proves the refusal on a real Neovim 0.9.5 with `tests/floor_smoke.sh`.
 - `vim.uv` for async I/O; Lua patterns, never regex quantifiers.
 - StyLua 2.5.2 with `.stylua.toml` (tabs, 120 columns); the Makefile pins the version, and bun is the formatter's one prerequisite.
-- Gates by make target: `make fmt` (writes), `make fmt-check`, `make lint-text` (the em dash), `make lint-blame` (`.git-blame-ignore-revs`), `make test`; `make help` lists them.
-- CI runs the same targets: `make fmt-check`, `make lint-text` and `make lint-blame` as written, and `tests/run.sh`, the script `make test` runs, in the test, floor, upstream, windows and nightly jobs.
+- Gates by make target: `make fmt` (writes), `make fmt-check`, `make lint-text` (the em dash), `make lint-blame` (`.git-blame-ignore-revs`), `make test`; `make hooks` installs the commit-msg hook; `make help` lists them.
+- CI runs the same targets: `make fmt-check`, `make lint-text` and `make lint-blame` as written, `tests/run.sh`, which `make test` runs, in the test, floor, upstream, windows and nightly jobs, and `tests/message_policy_test.sh`, which `make test` runs next, on the test job's Linux leg.
 - No default keymaps (issue #4). No em dash character anywhere.
-- Commits: subject at most 72 characters, a body that says why, no attribution trailer; `git config core.hooksPath .githooks` turns on the hook that refuses a trailer and the em dash.
+- Commits: an imperative subject of at most 72 characters, a body wrapped at 72 columns that says why, no attribution trailer, no em dash, no workflow skip instruction (CONTRIBUTING.md lists each); `make hooks` installs the hook that refuses them, never `core.hooksPath`.
 - Release titles are clean version numbers (`v1.10.0`); the notes come from the version's section of `CHANGELOG.md`.
 
 ## Tests
 
-- `make test` runs `tests/run.sh`: every `tests/*_test.lua` under private XDG directories, then the help tags when `doc/` exists.
+- `make test` runs `tests/run.sh` (every `tests/*_test.lua` under private XDG directories, then the help tags when `doc/` exists) and then `tests/message_policy_test.sh` (the policy script and the hook, committing in a scratch repository), and fails when either does.
 - One suite alone: `nvim --headless -u NONE -l tests/<file>_test.lua`.
 - `helpers_test`: the harness itself (root and isolation, the bounded curl, exit rulings, callback errors, `H.expect_error`, `H.rtp`, path spelling).
 - `parse_test`: every tracked Lua file parses under this Neovim's LuaJIT (it needs a git checkout).
