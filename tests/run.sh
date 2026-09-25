@@ -4,11 +4,12 @@
 # directory exists.
 #
 # Neovim builds its runtimepath from XDG_CONFIG_HOME and XDG_DATA_HOME, and
-# opens its startup log and shada under XDG_STATE_HOME, before any script
-# runs, where the helper cannot move them: the developer's ~/.config/nvim and
-# start packages stayed searchable after H.isolate (measured), and a start
-# package must not shadow the checkout under test. So the runner points all
-# four at a private directory of its own and removes it: mktemp's name is
+# opens its log under XDG_STATE_HOME, before any script runs, where the
+# helper cannot move them: the developer's ~/.config/nvim and start packages
+# stayed searchable after H.isolate (measured), and a start package must not
+# shadow the checkout under test. A suite under -l writes no shada; the
+# help-tags call below does (measured). So the runner points all four at a
+# private directory of its own and removes it: mktemp's name is
 # unpredictable and its mode 700, where a fixed name in a shared /tmp let
 # another account claim or repoint it first (measured). A caller who exports
 # one of them keeps the responsibility for that path.
@@ -27,6 +28,11 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 run=$(mktemp -d) || exit 1
 trap 'rm -rf "$run"' EXIT
+# dash ends on HUP, INT or TERM without the EXIT trap, which left the run
+# directory behind (measured), so each signal exits through it.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 : "${XDG_CONFIG_HOME:=$run/config}"
 : "${XDG_DATA_HOME:=$run/data}"
 : "${XDG_STATE_HOME:=$run/state}"
