@@ -71,6 +71,12 @@ printf 'Fix it\n' | "$policy" - 2>"$tmp/err"
 judge 'policy: - reads a clean stdin' "$?" 0
 "$policy" "$tmp/no-such-file" 2>"$tmp/err"
 judge 'policy: a missing file cannot be judged' "$?" 2 'is not a readable file'
+# A PATH that finds grep and cat but no awk breaks the line numbering, which
+# must read as could-not-judge, never as a refusal with a wrong line.
+mkdir "$tmp/bin" && ln -s "$(command -v grep)" "$(command -v cat)" "$tmp/bin/" || exit 1
+printf 'Fix it %s\n' "$dash" >"$tmp/msg"
+PATH=$tmp/bin "$policy" "$tmp/msg" 2>"$tmp/err"
+judge 'policy: a failed tool in the numbering cannot be judged' "$?" 2 'awk failed'
 pol 'Latin-1 bytes and no violation' 0 '' "$(printf 'Fix caf\351 na\357ve\n\nR\351sum\351 \344\366\374')"
 # A pull request that keeps the template carries it as its body, which the
 # commits job judges.
