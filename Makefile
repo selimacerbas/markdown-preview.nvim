@@ -3,21 +3,37 @@
 STYLUA_VERSION := 2.5.2
 STYLUA := bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION)
 
-.PHONY: help test fmt fmt-check lint-text lint-blame
+.PHONY: help test hooks fmt fmt-check lint-text lint-blame
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## / : /'
 
-test: ## Run every headless suite; the help-tags check runs when doc/ exists (tests/run.sh)
-	bash tests/run.sh
+# Both lanes run and their exits accumulate, so a red first lane does not
+# hide the second.
+test: ## Run every headless suite (tests/run.sh) and the commit-message policy test
+	@rc=0; bash tests/run.sh || rc=1; sh tests/message_policy_test.sh || rc=1; exit $$rc
+
+# Copied, never core.hooksPath: a hooks path inside the tracked tree runs the
+# hooks a checked-out branch carries, a fork's post-checkout during the
+# checkout itself; the copy runs this tree's policy only at commit time, the
+# trust make test on that branch already takes.
+hooks: ## Install the commit-msg hook into this clone
+	@hp=$$(git config --get core.hooksPath); \
+	if [ -n "$$hp" ]; then \
+	    echo "hooks: core.hooksPath is $$hp, so a hook copied into this clone would never run (git config --unset core.hooksPath when it points at .githooks)" >&2; exit 1; \
+	fi; \
+	dir=$$(git rev-parse --git-path hooks) && mkdir -p "$$dir" \
+	    && install -m 755 .githooks/commit-msg "$$dir/commit-msg" && echo "hooks: installed $$dir/commit-msg"
 
 # Tracked Lua files only, so an untracked directory (a live-server-rtp/
 # checkout, node_modules/) never enters. StyLua exits 0 when it is handed no
 # file, so an empty list fails here instead.
 fmt: ## Format every tracked Lua file with the pinned StyLua
+	@command -v bun >/dev/null 2>&1 || { echo 'fmt: bun runs StyLua and is not installed; install it from https://bun.sh' >&2; exit 1; }
 	@[ -n "$$(git ls-files -- '*.lua')" ] || { echo 'fmt: git lists no tracked Lua file' >&2; exit 1; }
 	git ls-files -z -- '*.lua' | xargs -0 $(STYLUA)
 
 fmt-check: ## Fail when a tracked Lua file is not formatted (the CI format job runs this)
+	@command -v bun >/dev/null 2>&1 || { echo 'fmt-check: bun runs StyLua and is not installed; install it from https://bun.sh' >&2; exit 1; }
 	@[ -n "$$(git ls-files -- '*.lua')" ] || { echo 'fmt-check: git lists no tracked Lua file' >&2; exit 1; }
 	@git ls-files -z -- '*.lua' | xargs -0 $(STYLUA) --check || { echo 'run make fmt to format' >&2; exit 1; }
 
