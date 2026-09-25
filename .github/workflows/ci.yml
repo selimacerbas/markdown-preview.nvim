@@ -4,11 +4,9 @@ on:
   push:
     branches: [main]
   # edited is listed because the title and the body become the squash
-  # commit, so an edited pull request is judged again. main is the one
-  # protected base; a pull request into an older base would judge main's
-  # own history.
+  # commit, so an edited pull request is judged again. No branch filter: it
+  # would drop every job, so a stacked pull request would get no CI at all.
   pull_request:
-    branches: [main]
     types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
@@ -300,8 +298,8 @@ jobs:
         run: make fmt-check
 
   # The pull request arm judges a contributor's commits, title and body before
-  # they land; the push arm reports what already landed on main, a direct push and
-  # the merge or squash commit GitHub composes included. A push range it
+  # they land; the push arm reports what already landed on main, a direct push
+  # and the merge or squash commit GitHub composes included. A push range it
   # cannot read is noticed, never judged.
   commits:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
