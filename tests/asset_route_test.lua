@@ -11,7 +11,7 @@ local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub
 H.isolate()
 H.rtp()
 
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 
 local ls_server = require("live_server.server")
 

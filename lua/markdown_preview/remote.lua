@@ -1,5 +1,5 @@
 -- lua/markdown_preview/remote.lua
-local uv = vim.loop
+local uv = vim.uv
 
 local M = {}
 

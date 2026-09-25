@@ -10,7 +10,7 @@ local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub
 local xdg = H.isolate()
 local rtp_dir = H.rtp()
 
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local ok, eq = H.ok, H.eq
 
 H.section("Section 1: root and isolation")
@@ -130,28 +130,34 @@ H.section("Section 3: the exit code is the ruling")
 -- A child killed by a signal reports code 0 (measured), so its exit is read
 -- through H.exit_code, 128 + the signal, as the helper reads curl's.
 -- opts.env adds to the child's environment, opts.helpers loads another copy
--- of the helper, opts.prelude runs before the helper loads and opts.cwd is
--- the child's working directory. The first hosted run's log reads as a
--- Windows child ending its lines in \r\n, which a pattern naming \n misses
--- (the next Windows run is the measurement), so the output is read with
--- every line end folded to \n, once, here.
+-- of the helper, opts.prelude runs before the helper loads, opts.cwd is the
+-- child's working directory and opts.merged joins the child's stderr to its
+-- stdout at the descriptor through POSIX sh, as tests/run.sh's 2>&1 does
+-- (otherwise stdout is read before stderr). The first hosted run's log reads
+-- as a Windows child ending its lines in \r\n, which a pattern naming \n
+-- misses (the next Windows run is the measurement), so the output is read
+-- with every line end folded to \n, once, here. A case that fails names the
+-- pattern it missed on one line (vim.inspect escapes the newline %q would
+-- write), so a Results line inside a pattern never starts a line of this
+-- suite's own log, where the runner counts them.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child_exit(body, expect, opts)
 	opts = opts or {}
 	local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
 	H.write_file(path, ("%slocal H = dofile(%q)\n%s\n"):format(opts.prelude or "", opts.helpers or helpers_path, body))
-	local r = vim.system(
-		{ vim.v.progpath, "--headless", "-u", "NONE", "-l", path },
-		{ env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }
-	):wait()
+	local cmd = { vim.v.progpath, "--headless", "-u", "NONE", "-l", path }
+	if opts.merged then
+		cmd = { "sh", "-c", 'exec "$0" "$@" 2>&1', unpack(cmd) }
+	end
+	local r = vim.system(cmd, { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }):wait()
 	local code = H.exit_code(r)
 	if code == 124 then
 		return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
 	end
 	local out = ((r.stdout or "") .. (r.stderr or "")):gsub("\r+\n", "\n")
 	if not out:find(expect) then
-		return ("exit %d without %q"):format(code, expect)
+		return ("exit %d without %s"):format(code, vim.inspect(expect))
 	end
 	return code
 end
@@ -178,7 +184,7 @@ H.ok(true, "x")
 H.finish()
 io.stdout:write("written before the kill\n")
 io.stdout:flush()
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.kill(uv.os_getpid(), "sigkill")]],
 			"written before the kill"
 		),
@@ -230,7 +236,7 @@ eq(
 		[[
 H.ok(true, "x")
 H.finish()
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
 os.exit(5)]],
@@ -243,7 +249,7 @@ eq(
 	child_exit(
 		[[
 H.ok(false, "deliberate")
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
 H.finish()]],
@@ -277,6 +283,34 @@ eq(
 	0,
 	"a line of exactly 80 columns and the next one stay two lines"
 )
+-- The ledger's own lines go the same way: a PASS line of exactly 80 columns
+-- printed on 0.12.5 swallowed the next ledger line (measured), so the width
+-- of a message decided which lines a reader or a grep of the log found.
+eq(
+	child_exit(
+		('H.ok(true, %q)\nH.ok(true, "second")\nH.finish()'):format(("w"):rep(72)),
+		"  PASS: " .. ("w"):rep(72) .. "\n  PASS: second\n.-\nResults: 2 passed, 0 failed, 0 skipped\n"
+	),
+	0,
+	"a PASS line of exactly 80 columns leaves the next line and the Results line at column zero"
+)
+-- A message the suite caused holds its line open on stderr until the next
+-- message begins, and the runner merges stderr into stdout, so the next
+-- ledger line ends that line first: without it the two shared one line
+-- (measured).
+if vim.fn.has("win32") == 1 then
+	H.skip("a ledger line after the suite's own message starts a line (no POSIX sh on Windows)")
+else
+	eq(
+		child_exit(
+			'print("a message the suite caused")\nH.ok(true, "after the message")\nH.finish()',
+			"a message the suite caused\n  PASS: after the message\n",
+			{ merged = true }
+		),
+		0,
+		"a ledger line after the suite's own message starts a line"
+	)
+end
 -- A quit a callback still holds when the main chunk ends runs during Neovim's
 -- teardown, after the ruling, and set the exit code again (measured).
 eq(
@@ -320,7 +354,7 @@ eq(
 	child_exit(
 		[[
 H.ok(false, "deliberate")
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local deadline = uv.hrtime() + 300e6
 local function chain()
     if uv.hrtime() < deadline then
@@ -393,7 +427,7 @@ H.section("Section 4: an error raised in a callback fails the suite")
 eq(
 	child_exit(
 		[[
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(10, 0, function() error("luv boom") end)
 vim.wait(200, function() return false end)
 H.ok(true, "the assertions pass")
@@ -419,7 +453,7 @@ H.finish()]],
 eq(
 	child_exit(
 		[[
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local srv = uv.new_tcp()
 srv:bind("127.0.0.1", 0)
 srv:listen(8, function()
@@ -457,7 +491,7 @@ eq(
 H.ok(true, "x")
 H.finish()
 vim.schedule(function() error("late") end)
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(50, 0, function()
     io.stdout:write("timer fired\n")
     os.exit(0)
@@ -663,13 +697,30 @@ eq(
 	"an existing path is the name the filesystem gives it"
 )
 eq(H.canon(p .. "/phys/"), canon_p .. "/phys", "a trailing slash names the same directory")
+eq(H.canon(p .. "/nope/"), canon_p .. "/nope", "a trailing slash after a missing name leaves none")
 eq(
 	H.canon(p .. "/nope/deeper"),
 	canon_p .. "/nope/deeper",
 	"a missing name resolves through its deepest existing ancestor"
 )
+-- :p keeps a . in a missing tail (measured), so the walk must drop it.
+eq(H.canon(p .. "/nope/./deeper"), canon_p .. "/nope/deeper", "a . in a missing tail names no directory")
 -- The root is the one existing ancestor that ends in a separator.
 eq(H.canon("/nope-canon-xyz/a"), H.canon("/") .. "nope-canon-xyz/a", "a missing name under the root gets one separator")
+eq(H.canon("/nope-canon-xyz/../.."), H.canon("/"), "a .. at the root stays at the root")
+-- A name under a file is missing (ENOTDIR), not an error: the walk goes on
+-- through the file's own name, a .. after it included.
+local plain = p .. "/plain"
+H.write_file(plain, "")
+local function canon_or_raise(path)
+	local done, got = pcall(H.canon, path)
+	return done and got or ("raised " .. tostring(got))
+end
+eq(
+	canon_or_raise(plain .. "/x") .. " " .. canon_or_raise(plain .. "/x/../y"),
+	canon_p .. "/plain/x " .. canon_p .. "/plain/y",
+	"a name under a file resolves through the file's name"
+)
 eq(H.canon("~/nope-canon-xyz"), H.canon(vim.fn.expand("~")) .. "/nope-canon-xyz", "a leading ~ is the home directory")
 -- normalize expands $VAR unless told not to, and a $ in a directory's name
 -- is a character: a message names the directory that exists
@@ -693,9 +744,9 @@ for _, name in ipairs({ p, p .. "/phys/../phys", p .. "/nope", p .. "/missing/..
 end
 eq(table.concat(unstable, ", "), "", "a second pass changes nothing")
 -- Windows makes a file link unless told dir. A .. after a link resolves from
--- the link's target on POSIX, as the filesystem reads it, also while a later
--- name is missing, so creating that name does not move the path; Win32
--- resolves .. by name before the filesystem sees it.
+-- the link's target on POSIX, as the filesystem reads it, also while a name
+-- before the link or after the .. is missing, so creating that name does not
+-- move the path; Win32 resolves .. by name before the filesystem sees it.
 local link = p .. "/links/t"
 local linked, link_err = uv.fs_symlink(p .. "/phys/t", link, { dir = true })
 local link_cases = {
@@ -706,6 +757,10 @@ local dotdot_cases = {
 	"a .. after a directory symlink resolves from its target",
 	"a .. after a directory symlink resolves from its target while a later name is missing",
 	"creating the missing name leaves that path where it was",
+	"a .. out of a missing name, then a link and a .., reads as the kernel will",
+	"creating that missing name leaves the path where it was",
+	"the same with a missing name after the link's .. reads as the kernel will",
+	"creating the first missing name leaves that path where it was too",
 }
 if linked and uv.fs_stat(link) then
 	eq(H.canon(link), canon_p .. "/phys/t", link_cases[1])
@@ -719,6 +774,17 @@ if linked and uv.fs_stat(link) then
 		eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[2])
 		vim.fn.mkdir(p .. "/phys/later", "p")
 		eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[3])
+		-- Fresh names: phys/later exists by now, and the second shape needs a
+		-- name after the link's .. that is still missing.
+		local climbs = { "/early/../links/t/../y", "/early/../links/t/../unmade/y" }
+		local before = { H.canon(p .. climbs[1]), H.canon(p .. climbs[2]) }
+		vim.fn.mkdir(p .. "/early", "p")
+		local kernel = uv.fs_realpath(p .. "/early/../links/t/..")
+		kernel = kernel and vim.fs.normalize(kernel, { expand_env = false }) or "(realpath failed)"
+		eq(before[1], kernel .. "/y", dotdot_cases[4])
+		eq(H.canon(p .. climbs[1]), kernel .. "/y", dotdot_cases[5])
+		eq(before[2], kernel .. "/unmade/y", dotdot_cases[6])
+		eq(H.canon(p .. climbs[2]), kernel .. "/unmade/y", dotdot_cases[7])
 	end
 else
 	local why = " (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")"
@@ -751,9 +817,16 @@ eq(
 -- A symlink loop names a file that exists and cannot be resolved, so the
 -- helper raises with the errno instead of answering with the spelling.
 local loop_a, loop_b = p .. "/links/loop-a", p .. "/links/loop-b"
-if uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b) then
+local looped = uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b)
+if looped then
 	local canon_ok, canon_err = pcall(H.canon, loop_a)
 	ok(not canon_ok and tostring(canon_err):find("ELOOP", 1, true) ~= nil, "H.canon raises ELOOP on a symlink loop")
+	-- Past a missing name, the loop is met by the walk over the tail.
+	local climb_ok, climb_err = pcall(H.canon, p .. "/missing/../links/loop-a")
+	ok(
+		not climb_ok and tostring(climb_err):find("ELOOP", 1, true) ~= nil,
+		"H.canon raises ELOOP on a symlink loop reached past a missing name"
+	)
 	local same_ok, same_err = pcall(H.same_path, p, loop_a)
 	ok(
 		not same_ok and tostring(same_err):find("ELOOP", 1, true) ~= nil,
@@ -761,14 +834,16 @@ if uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b) then
 	)
 else
 	H.skip("H.canon raises ELOOP on a symlink loop (no symlink here)")
+	H.skip("H.canon raises ELOOP on a symlink loop reached past a missing name (no symlink here)")
 	H.skip("H.same_path raises ELOOP through H.canon on a symlink loop (no symlink here)")
 end
 -- The raise names the suite's own line: the one inside call, found by the
--- file and the line range debug.getinfo gives for it.
-local function blames_caller(call)
+-- file and the line range debug.getinfo gives for it. what is the pattern
+-- the message carries after the line, a refused name unless given.
+local function blames_caller(call, what)
 	local done, err = pcall(call)
 	local where = debug.getinfo(call, "S")
-	local src, line = tostring(err):match("^(.-):(%d+): H%.[%w_]+: a path is a non%-empty string")
+	local src, line = tostring(err):match("^(.-):(%d+): " .. (what or "H%.[%w_]+: a path is a non%-empty string"))
 	line = tonumber(line)
 	return not done
 		and src == where.short_src
@@ -800,5 +875,16 @@ ok(
 	end),
 	"H.same_path refuses an empty second name at the suite's line"
 )
+-- The walk over a missing tail raises at the same level as the walk up.
+if looped then
+	ok(
+		blames_caller(function()
+			H.canon(p .. "/missing/../links/loop-a")
+		end, "H%.canon: ELOOP"),
+		"an ELOOP reached past a missing name names the suite's line"
+	)
+else
+	H.skip("an ELOOP reached past a missing name names the suite's line (no symlink here)")
+end
 
 H.finish()

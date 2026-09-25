@@ -1,4 +1,26 @@
 -- lua/markdown_preview/init.lua
+-- A config calls setup() whatever the plugin file did (lazy.nvim's config
+-- runs it), so below the floor the module is a stub whose every call
+-- answers an empty string (a nil renders as the word in a statusline), and
+-- it returns before the requires below: live-server's modules refuse to
+-- load there. The text is the plugin file's, so notify_once shows it once,
+-- and it waits for the loop as the plugin file's does: a lazy load on
+-- FileType runs inside 0.9's filetype nvim_cmd, where an ERROR notification
+-- raised Vim(append) with a traceback.
+if vim.fn.has("nvim-0.10") == 0 then
+	vim.schedule(function()
+		vim.notify_once("markdown-preview.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+	end)
+	local function nothing()
+		return ""
+	end
+	return setmetatable({ setup = nothing }, {
+		__index = function()
+			return nothing
+		end,
+	})
+end
+
 local ts = require("markdown_preview.ts")
 local util = require("markdown_preview.util")
 local ls_server = require("live_server.server")
@@ -513,7 +535,7 @@ end
 -- When bound to 0.0.0.0 detect the outbound LAN IP via a UDP connect trick
 -- (no packets are sent; it just lets the kernel pick the right interface).
 local function lan_ip()
-	local udp = vim.loop.new_udp()
+	local udp = vim.uv.new_udp()
 	if not udp then
 		return "127.0.0.1"
 	end

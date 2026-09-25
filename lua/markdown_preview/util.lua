@@ -17,23 +17,23 @@ function M.file_exists(path)
 	if not path then
 		return false
 	end
-	local stat = vim.loop.fs_stat(path)
+	local stat = vim.uv.fs_stat(path)
 	return stat and stat.type == "file"
 end
 
 function M.write_text(path, text)
 	M.mkdirp(dirname(path))
-	local fd = assert(vim.loop.fs_open(path, "w", 420)) -- 0644
-	assert(vim.loop.fs_write(fd, text, 0))
-	assert(vim.loop.fs_close(fd))
+	local fd = assert(vim.uv.fs_open(path, "w", 420)) -- 0644
+	assert(vim.uv.fs_write(fd, text, 0))
+	assert(vim.uv.fs_close(fd))
 end
 
 function M.read_text(path)
 	assert(type(path) == "string" and #path > 0, "read_text: path is nil")
-	local fd = assert(vim.loop.fs_open(path, "r", 420))
-	local stat = assert(vim.loop.fs_fstat(fd))
-	local data = assert(vim.loop.fs_read(fd, stat.size, 0))
-	assert(vim.loop.fs_close(fd))
+	local fd = assert(vim.uv.fs_open(path, "r", 420))
+	local stat = assert(vim.uv.fs_fstat(fd))
+	local data = assert(vim.uv.fs_read(fd, stat.size, 0))
+	assert(vim.uv.fs_close(fd))
 	return data
 end
 

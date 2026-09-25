@@ -17,7 +17,7 @@ H.isolate()
 -- other case runs H.rtp() in a child, so a raise here is caught, not fatal.
 local found_ok, real_ls = pcall(H.rtp)
 
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local ok, eq = H.ok, H.eq
 
 -- One child of the same binary per case, since a raise ends the process that
@@ -157,7 +157,7 @@ H.ok(true, "x")
 H.finish()
 io.stdout:write("written before the kill\n")
 io.stdout:flush()
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.kill(uv.os_getpid(), "sigkill")]],
 		""
 	)
