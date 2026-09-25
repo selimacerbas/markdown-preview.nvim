@@ -1,9 +1,9 @@
 // One end-to-end gate for the page: a headless Neovim serves a buffer, a
 // headless Chromium renders it, and an edit made through Neovim's RPC reaches
-// the page over SSE. It needs network for the jsDelivr libraries until the
-// offline-assets arc lands.
+// the page over SSE. It needs network: the page loads its libraries from
+// jsDelivr until they ship with the plugin.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
@@ -84,11 +84,19 @@ beforeAll(async () => {
 }, 40_000);
 
 afterAll(async () => {
-  await browser?.close();
-  if (nvim) {
-    nvim.kill();
-    // Reap, but never hang the runner on a process that ignores the signal.
-    await Promise.race([nvim.exited, Bun.sleep(3_000)]);
+  try {
+    await browser?.close();
+  } finally {
+    if (nvim) {
+      nvim.kill();
+      // Reap, escalating to SIGKILL, so a hung Neovim never outlives the run.
+      await Promise.race([nvim.exited, Bun.sleep(3_000)]);
+      if (nvim.exitCode === null && nvim.signalCode === null) {
+        nvim.kill("SIGKILL");
+        await Promise.race([nvim.exited, Bun.sleep(3_000)]);
+      }
+    }
+    rmSync(work, { recursive: true, force: true });
   }
 });
 
