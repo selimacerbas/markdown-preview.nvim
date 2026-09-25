@@ -125,9 +125,12 @@ com() {
     done
     shift
     stage
-    (cd "$repo" && GIT_EDITOR=true git commit -q "$@") >"$tmp/err" 2>&1
+    (cd "$repo" && GIT_EDITOR=true git commit -q "$@") >"$tmp/err.git" 2>&1
     got=$?
     [ "$got" = 0 ] || got=1
+    # Git's own warning and hint lines (git 2.51 deprecates commentChar=auto
+    # and says so on every commit) are not the hook's output.
+    grep -v -e '^warning: ' -e '^hint:' "$tmp/err.git" >"$tmp/err"
     judge "hook: $name" "$got" "$want" "$text"
 }
 # rec NAME HOOK RECORDED CONFIG... -- ARGS: com with HOOK as its want, then
