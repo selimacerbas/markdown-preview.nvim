@@ -6,13 +6,16 @@
 -- once with the plugin file's (notify_once arrived in 0.7), and it waits for
 -- the loop as the plugin file's does: a lazy load on FileType runs inside
 -- 0.9's filetype nvim_cmd, where an ERROR notification raised Vim(append)
--- with a traceback.
+-- with a traceback. A config that set loaded_markdown_preview opted out, and
+-- the plugin file says nothing then, so the stub says nothing either.
 local floor = require("markdown_preview.floor")
 if not floor.ok then
-	vim.schedule(function()
-		local notify = vim.notify_once or vim.notify
-		notify(floor.message, vim.log.levels.ERROR)
-	end)
+	if not vim.g.loaded_markdown_preview then
+		vim.schedule(function()
+			local notify = vim.notify_once or vim.notify
+			notify(floor.message, vim.log.levels.ERROR)
+		end)
+	end
 	local function nothing()
 		return ""
 	end

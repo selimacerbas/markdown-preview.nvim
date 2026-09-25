@@ -81,19 +81,33 @@ local function floor_ok_without(field)
 	return chunk().ok
 end
 
+-- What a pcall returned, or what it raised, as one value: an and/or idiom
+-- would read a false verdict as a raise.
+local function outcome(done, value)
+	if done then
+		return value
+	end
+	return "raised " .. tostring(value)
+end
+
 -- The guard's return comes before every require but the floor module's, in
--- the source, so a require moved above it reds even when the module it
--- loads happens to need nothing newer.
+-- the source, a pcall(require, ...) included, so a require moved above it
+-- reds even when the module it loads happens to need nothing newer.
 local function guard_precedes_requires()
 	local src = table.concat(vim.fn.readfile(H.root .. "/lua/" .. MODULE .. "/init.lua"), "\n")
 	src = src:gsub("%-%-[^\n]*", "")
 	local guard = src:find("if not floor.ok then", 1, true)
 	local ret = guard and src:find("return setmetatable", guard, true)
 	local first
-	for at, name in src:gmatch("()require%s*%(?%s*[\"']([^\"']+)[\"']") do
-		if name ~= MODULE .. ".floor" then
-			first = at
-			break
+	for _, pattern in ipairs({
+		"()require%s*%(?%s*[\"']([^\"']+)[\"']",
+		"()pcall%s*%(%s*require%s*,%s*[\"']([^\"']+)[\"']",
+	}) do
+		for at, name in src:gmatch(pattern) do
+			if name ~= MODULE .. ".floor" then
+				first = math.min(first or at, at)
+				break
+			end
 		end
 	end
 	return guard ~= nil and ret ~= nil and (first == nil or ret < first),
@@ -130,12 +144,21 @@ H.ok(documented ~= "", "the README's command table lists the commands: " .. docu
 -- that shares the config must not be told at every start.
 vim.g.loaded_markdown_preview = 1
 vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
+-- lazy.nvim's config still calls setup(), which answers without a word too.
+local quiet_ok, quiet_err = pcall(function()
+	require(MODULE).setup({})
+end)
 turn_loop()
 H.eq(
-	("%d notices, commands %q"):format(#notices + #refusals, defined()),
-	'0 notices, commands ""',
-	"a config that opted out hears nothing below the floor"
+	("%d notices, commands %q, setup %s"):format(
+		#notices + #refusals,
+		defined(),
+		quiet_ok and "returned" or ("raised " .. tostring(quiet_err))
+	),
+	'0 notices, commands "", setup returned',
+	"a config that opted out hears nothing below the floor, from the plugin file or the module"
 )
+package.loaded[MODULE] = nil
 vim.g.loaded_markdown_preview = nil
 vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
 local message = require(MODULE .. ".floor").message
@@ -222,9 +245,27 @@ H.eq(
 	message,
 	"without notify_once the plugin file shows the text once"
 )
-require(MODULE).setup({})
+local again_ok, again_err = pcall(function()
+	require(MODULE).setup({})
+end)
 turn_loop()
-H.eq(#refusals == 2 and refusals[2].msg or #refusals, message, "without notify_once the module shows the text once")
+H.eq(
+	not again_ok and ("setup() raised " .. tostring(again_err)) or (#refusals == 2 and refusals[2].msg or #refusals),
+	message,
+	"without notify_once the module shows the text once"
+)
+-- A Neovim before 0.8 has no vim.fs, and one with a vim.uv = vim.loop
+-- polyfill passed a vim.uv test into an index of it (measured on 0.7.2
+-- and 0.6.1), so below the floor the predicate answers false without
+-- raising where the first table of any feature it tests is missing.
+for _, field in ipairs(FEATURES) do
+	local first = field:match("^[^.]+")
+	H.eq(
+		outcome(pcall(floor_ok_without, first)),
+		false,
+		"below the floor the predicate answers without vim." .. first .. " and raises nothing"
+	)
+end
 
 H.section("Section 2: at the floor")
 vim.fn.has = real_has
@@ -244,15 +285,28 @@ for name in pairs(package.loaded) do
 		package.loaded[name] = nil
 	end
 end
-H.ok(floor_ok_without(nil), "the floor admits this Neovim")
+H.eq(outcome(pcall(floor_ok_without, nil)), true, "the floor admits this Neovim")
 for _, field in ipairs(FEATURES) do
-	H.eq(floor_ok_without(field), false, "the floor refuses a Neovim without vim." .. field .. ", whatever its version")
+	H.eq(
+		outcome(pcall(floor_ok_without, field)),
+		false,
+		"the floor refuses a Neovim without vim." .. field .. ", whatever its version"
+	)
 end
-vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
+-- Under pcall, so a plugin that raises at the floor reds this row and not
+-- the whole suite.
+local sourced, source_err = pcall(vim.cmd, "source " .. vim.fn.fnameescape(plugin_file))
+H.eq(
+	sourced and "sourced" or ("raised " .. tostring(source_err)),
+	"sourced",
+	"the plugin file sources without raising on a supported Neovim"
+)
 -- By type: a left-over stub answers config with a function.
+local module_ok, module = pcall(require, MODULE)
 H.ok(
-	type(require(MODULE).config) == "table" and type(package.loaded["live_server.server"]) == "table",
+	module_ok and type(module.config) == "table" and type(package.loaded["live_server.server"]) == "table",
 	"the plugin's own modules and live-server's load on a supported Neovim"
+		.. (module_ok and "" or (": " .. tostring(module)))
 )
 H.eq(defined(), documented, "every documented command is defined on a supported Neovim, and no other")
 H.finish()

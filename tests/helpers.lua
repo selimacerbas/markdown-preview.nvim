@@ -48,10 +48,12 @@ end
 -- (ENOENT) or sits under a file (ENOTDIR). Any other error comes back as the
 -- second value, which H.canon raises at its caller's line rather than
 -- compare as some other file: a file that exists and cannot be resolved (a
--- symlink loop, a refused search), or a name no file can have
--- (ENAMETOOLONG: a spelling over PATH_MAX, or a component over NAME_MAX,
--- which cannot exist; past a missing directory such a component is looked
--- up as a missing name, so it reads as a path until that directory is made).
+-- symlink loop, a refused search), or a name the platform's realpath calls
+-- too long (ENAMETOOLONG). That errno is the platform's, not this walk's:
+-- macOS's realpath refuses a spelling over PATH_MAX (measured), glibc's
+-- resolves one (read from its source); a component over NAME_MAX cannot
+-- exist, and past a missing directory it is looked up as a missing name, so
+-- it reads as a path until that directory is made.
 local function realpath(name)
 	local real, err, kind = uv.fs_realpath(name)
 	if real then

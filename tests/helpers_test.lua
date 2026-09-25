@@ -276,27 +276,31 @@ H.finish()]],
 	"a child's \\r\\n line ends read as \\n"
 )
 -- A line a parent reads back goes through H.write_line: on 0.12.5 a print
--- line that fills a multiple of 80 columns lost its newline to the next
--- (measured at 80, 160, 240 and 320; never on 0.10.0), so the length of a
--- temp path decided whether two captured lines stayed two.
+-- line that fills a multiple of the message grid's width lost its newline to
+-- the next (measured at 80, 160, 240 and 320 columns, and at 10000; never on
+-- 0.10.0), so the length of a temp path decided whether two captured lines
+-- stayed two. The helper widens the grid, so these lines are built at the
+-- width the child runs at (the same helper sets it here): a line of 80 no
+-- longer fills it, and a print of one would pass (measured).
+local grid = vim.o.columns
 eq(
 	child_exit(
-		('H.write_line(%q)\nH.write_line("second")\nH.ok(true, "x")\nH.finish()'):format(("x"):rep(80)),
-		("x"):rep(80) .. "\n+second\n"
+		('H.write_line(%q)\nH.write_line("second")\nH.ok(true, "x")\nH.finish()'):format(("x"):rep(grid)),
+		("x"):rep(grid) .. "\n+second\n"
 	),
 	0,
-	"a line of exactly 80 columns and the next one stay two lines"
+	"a line exactly as wide as the message grid and the next one stay two lines"
 )
--- The ledger's own lines go the same way: a PASS line of exactly 80 columns
--- printed on 0.12.5 swallowed the next ledger line (measured), so the width
--- of a message decided which lines a reader or a grep of the log found.
+-- The ledger's own lines go the same way: a PASS line exactly as wide as the
+-- grid printed on 0.12.5 swallowed the next ledger line (measured), so the
+-- width of a message decided which lines a reader or a grep of the log found.
 eq(
 	child_exit(
-		('H.ok(true, %q)\nH.ok(true, "second")\nH.finish()'):format(("w"):rep(72)),
-		"  PASS: " .. ("w"):rep(72) .. "\n  PASS: second\n.-\nResults: 2 passed, 0 failed, 0 skipped\n"
+		('H.ok(true, %q)\nH.ok(true, "second")\nH.finish()'):format(("w"):rep(grid - 8)),
+		"  PASS: " .. ("w"):rep(grid - 8) .. "\n  PASS: second\n.-\nResults: 2 passed, 0 failed, 0 skipped\n"
 	),
 	0,
-	"a PASS line of exactly 80 columns leaves the next line and the Results line at column zero"
+	"a PASS line exactly as wide as the message grid leaves the next line and the Results line at column zero"
 )
 -- A message the suite caused holds its line open on stderr until the next
 -- message begins, and the runner merges stderr into stdout, so the next
@@ -897,18 +901,29 @@ local function raised_errno(path, errno)
 	local got = canon_or_raise(path)
 	return got:match("^raised (H%.canon: " .. errno .. ")") or got:sub(1, 200)
 end
--- A spelling over PATH_MAX (1024 bytes on macOS, 4096 on Linux) names no
--- file the kernel will resolve, even one that climbs back to a directory
--- that exists: the walk up raises it rather than climb to a prefix short
--- enough to resolve. Win32 resolves .. by name before the length counts.
-if vim.fn.has("win32") == 1 then
-	H.skip("a spelling over PATH_MAX that resolves short raises ENAMETOOLONG (Win32 resolves .. by name)")
+-- A spelling over PATH_MAX (1024 bytes on macOS, 4096 on Linux) that climbs
+-- back to a directory that exists. Whether it resolves is the platform's
+-- realpath's answer, not the walk's: macOS's refuses it with ENAMETOOLONG
+-- (measured), which the walk up must raise rather than climb to a prefix
+-- short enough to resolve; glibc's allocates its own buffer and resolves it
+-- (read from its source; the ubuntu job is the measurement), which H.canon
+-- must then answer with. The row asks the platform first and pins that
+-- answer; any other answer stays red, quoted.
+local long = p .. "/phys" .. ("/t/.."):rep(1000)
+local long_cases = {
+	"a spelling over PATH_MAX that this realpath refuses raises ENAMETOOLONG",
+	"a spelling over PATH_MAX that this realpath resolves reads as its resolution",
+}
+local platform_real, platform_err, platform_kind = uv.fs_realpath(long)
+if platform_kind == "ENAMETOOLONG" then
+	eq(raised_errno(long, "ENAMETOOLONG"), "H.canon: ENAMETOOLONG", long_cases[1])
+	H.skip(long_cases[2] .. " (this realpath refuses a spelling over PATH_MAX)")
+elseif platform_real then
+	eq(canon_or_raise(long):sub(1, 200), vim.fs.normalize(platform_real, { expand_env = false }), long_cases[2])
+	H.skip(long_cases[1] .. " (this realpath resolves a spelling over PATH_MAX)")
 else
-	eq(
-		raised_errno(p .. "/phys" .. ("/t/.."):rep(1000), "ENAMETOOLONG"),
-		"H.canon: ENAMETOOLONG",
-		"a spelling over PATH_MAX that resolves short raises ENAMETOOLONG"
-	)
+	eq(("realpath answered %s"):format(tostring(platform_err)), "ENAMETOOLONG or a name", long_cases[1])
+	H.skip(long_cases[2] .. " (this realpath neither refused nor resolved it)")
 end
 -- A refused search names a file that exists and cannot be resolved, in the
 -- walk up and past a missing name alike. A process that searches a mode-0
