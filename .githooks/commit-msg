@@ -42,10 +42,6 @@ msg=$(CC=$cc MODE=${mode:-default} awk '
     END {
         mode = ENVIRON["MODE"]
         cc = ENVIRON["CC"]
-        if (mode == "verbatim" || mode == "whitespace") {
-            for (i = 1; i <= NR; i++) print line[i]
-            exit
-        }
         guessed = 0
         if (tolower(cc) == "auto") {
             cc = ""
@@ -65,7 +61,9 @@ msg=$(CC=$cc MODE=${mode:-default} awk '
                 if (line[i] == cc) editor = 1
                 if (cut_at(cc, i)) { editor = 1; if (end > NR) end = i }
             }
-        drop = mode == "strip" || (mode != "scissors" && editor)
+        # git -v drops everything from its scissors line in every mode; only
+        # strip, and the default in an editor session, drop comment lines.
+        drop = mode == "strip" || (mode != "scissors" && mode != "whitespace" && mode != "verbatim" && editor)
         for (i = 1; i < end; i++)
             if (!drop || index(line[i], cc) != 1) print line[i]
     }' "$1") || { echo 'commit-msg: the message file could not be read' >&2; exit 2; }

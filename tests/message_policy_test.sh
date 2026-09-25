@@ -4,8 +4,8 @@
 # whose hook make hooks installed, under git's own comment handling (the
 # configured strings, auto, -v, -m, -F, an editor session). GIT_EDITOR=true
 # leaves git's template in the file untouched, as a user who saves at once.
-# The CI arms of the commits job are the workflow's own steps, measured at
-# review.
+# The CI arms of the commits job are the workflow's own steps and are not
+# run by this suite.
 #
 # Run: sh tests/message_policy_test.sh
 set -u
@@ -163,9 +163,13 @@ com '-m with Co-Authored-By : is refused' 1 'attribution trailer on line 3 (Co-A
 com 'an em dash subject under an editor is refused' 1 'em dash character (U+2014) on line 1' -- -e -m "Subject ${dash} x"
 # commit.cleanup, each mode under an editor with -v and with a -m comment
 # line, against what git recorded.
+rec 'cleanup=whitespace under -v -e on the em dash branch' 1 1 commit.cleanup=whitespace -- -v -e -m 'Clean subject'
+# The rest run on a plain branch: git records the branch name in the
+# comment lines it keeps, and an em dash there would hide a hook that
+# judges the diff below the scissors line.
+git -C "$repo" checkout -q -b plain || exit 1
 for m in default strip scissors whitespace verbatim; do
-    case $m in default | strip | scissors) w=0 ;; *) w=1 ;; esac
-    rec "cleanup=$m under -v -e" "$w" "$w" commit.cleanup=$m -- -v -e -m 'Clean subject'
+    rec "cleanup=$m under -v -e" 0 0 commit.cleanup=$m -- -v -e -m 'Clean subject'
     case $m in strip) w=0 ;; *) w=1 ;; esac
     rec "cleanup=$m with a -m comment line" "$w" "$w" commit.cleanup=$m -- -m 'Clean subject' -m "# note ${dash}"
 done
