@@ -1,20 +1,22 @@
 -- lua/markdown_preview/init.lua
 -- A config calls setup() whatever the plugin file did (lazy.nvim's config
 -- runs it), so below the floor the module is a stub whose every call
--- answers an empty string (a nil renders as the word in a statusline), and
--- it returns before the requires below: live-server's modules refuse to
--- load there. The text is the plugin file's, so notify_once shows it once,
--- and it waits for the loop as the plugin file's does: a lazy load on
--- FileType runs inside 0.9's filetype nvim_cmd, where an ERROR notification
--- raised Vim(append) with a traceback.
-if vim.fn.has("nvim-0.10") == 0 then
+-- answers an empty string, and it returns before the requires below, whose
+-- code needs 0.10. The text is the floor module's, so notify_once shows it
+-- once with the plugin file's (notify_once arrived in 0.7), and it waits for
+-- the loop as the plugin file's does: a lazy load on FileType runs inside
+-- 0.9's filetype nvim_cmd, where an ERROR notification raised Vim(append)
+-- with a traceback.
+local floor = require("markdown_preview.floor")
+if not floor.ok then
 	vim.schedule(function()
-		vim.notify_once("markdown-preview.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+		local notify = vim.notify_once or vim.notify
+		notify(floor.message, vim.log.levels.ERROR)
 	end)
 	local function nothing()
 		return ""
 	end
-	return setmetatable({ setup = nothing }, {
+	return setmetatable({}, {
 		__index = function()
 			return nothing
 		end,

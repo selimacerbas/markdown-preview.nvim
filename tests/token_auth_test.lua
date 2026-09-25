@@ -1,8 +1,8 @@
 -- tests/token_auth_test.lua
 -- End-to-end check that the plugin generates a token, threads it into the
--- served HTML and gates content.md. The suite drives
--- require("markdown_preview").start() directly, not the :MarkdownPreview
--- user command.
+-- served HTML and gates content.md, and that the lockfile holding it is
+-- private. The suite drives require("markdown_preview").start() directly, not
+-- the :MarkdownPreview user command.
 --
 -- Run: nvim --headless -u NONE -l tests/token_auth_test.lua
 -- live-server.nvim is found by tests/helpers.lua ($LIVE_SERVER_RTP,
@@ -117,5 +117,30 @@ vim.wait(200, function()
 end)
 r = http_get(("http://127.0.0.1:%d/"):format(port))
 eq(r.curl_exit, 7, "the port refuses connections after stop")
+
+H.section("Section 3: the lockfile keeps the token private")
+-- The lockfile carries the session token and the README promises 0600, but
+-- the open's mode applies only when it creates the file, so a lockfile an
+-- older version left 0644 kept that mode (measured) until lock.write made it
+-- private before writing the token.
+local uv = vim.uv
+local lock = require("markdown_preview.lock")
+local lock_file = vim.fs.joinpath(vim.fn.stdpath("cache"), "markdown-preview", "server.lock")
+local function mode()
+	local stat = uv.fs_stat(lock_file)
+	return stat and ("%o"):format(stat.mode % 512) or "missing"
+end
+if vim.fn.has("win32") == 1 then
+	H.skip("a fresh lockfile is 0600 (no POSIX mode bits on Windows)")
+	H.skip("a 0644 lockfile an older version left is 0600 after lock.write (no POSIX mode bits on Windows)")
+else
+	lock.remove()
+	lock.write(1234, "/w", "TOKEN")
+	eq(mode(), "600", "a fresh lockfile is 0600")
+	uv.fs_chmod(lock_file, 420)
+	lock.write(1234, "/w", "TOKEN")
+	eq(mode(), "600", "a 0644 lockfile an older version left is 0600 after lock.write")
+	lock.remove()
+end
 
 H.finish()

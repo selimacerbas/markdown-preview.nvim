@@ -138,6 +138,34 @@ jobs:
       - name: Headless tests
         run: bash tests/run.sh
 
+  # Below the floor on a real Neovim: the suites need 0.10, and floor_guard
+  # mocks has() on a supported one, which passes a 0.10 API reached before a
+  # guard (measured), so a standalone smoke runs the refusal a 0.9 user meets,
+  # with the live-server floor on the runtimepath as a user has it.
+  floor-below:
+    name: floor-below (ubuntu-latest, nvim v0.9.5, live-server floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tests/floor_smoke.sh puts ./live-server-rtp on the runtimepath.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: ${{ env.LIVE_SERVER_FLOOR_SHA }}
+          path: live-server-rtp
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: v0.9.5
+      - name: Version
+        run: nvim --version | head -n 3
+      - name: Below-floor smoke
+        run: sh tests/floor_smoke.sh
+
   # A live-server main change that is not this repo's regression must not red
   # every PR, so main is reported here, outside ci-ok, on every push and PR.
   upstream:
@@ -265,7 +293,7 @@ jobs:
   # cannot pass.
   ci-ok:
     if: always()
-    needs: [test, floor, lint-workflows, format]
+    needs: [test, floor, floor-below, lint-workflows, format]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -273,8 +301,9 @@ jobs:
         env:
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
+          FLOOR_BELOW: ${{ needs.floor-below.result }}
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
         run: |
-          echo "test=$TEST floor=$FLOOR lint-workflows=$LINT format=$FORMAT"
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ]
+          echo "test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT"
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ]
