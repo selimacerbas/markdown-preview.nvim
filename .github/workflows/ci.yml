@@ -408,6 +408,60 @@ jobs:
           done
           exit "$fail"
 
+  # The page itself: tests/browser/smoke.test.ts renders a buffer in a
+  # headless Chromium and follows one edit over SSE. The CDN libraries the
+  # page loads need network, and a failed request is named in the output.
+  browser:
+    name: browser (ubuntu-latest, nvim stable, chromium, live-server floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The smoke test looks for live-server.nvim at ./live-server-rtp.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selimacerbas/live-server.nvim
+          ref: ${{ env.LIVE_SERVER_FLOOR_SHA }}
+          path: live-server-rtp
+          persist-credentials: false
+      # A moved tag is the supply-chain event this step surfaces: the checkout
+      # took the pinned commit, and the tag must still name it. The helper's
+      # floor assignment, matched as a whole line, must name the same tag, so a
+      # bump that edits one place reds even with the old line left in a comment.
+      - name: live-server floor is the pinned tag
+        run: |
+          if ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
+            echo "::error::tests/helpers.lua's H.live_server_floor does not name $LIVE_SERVER_FLOOR"
+            exit 1
+          fi
+          git -C live-server-rtp fetch --depth 1 origin "refs/tags/$LIVE_SERVER_FLOOR:refs/tags/$LIVE_SERVER_FLOOR"
+          tagged=$(git -C live-server-rtp rev-parse "$LIVE_SERVER_FLOOR^{commit}")
+          if [ "$tagged" != "$LIVE_SERVER_FLOOR_SHA" ]; then
+            echo "::error::live-server $LIVE_SERVER_FLOOR names $tagged, not the pinned $LIVE_SERVER_FLOOR_SHA"
+            exit 1
+          fi
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: stable
+      - name: Version
+        run: nvim --version | head -n 3
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          token: ""
+      - name: Install
+        working-directory: tests/browser
+        run: bun install --frozen-lockfile
+      - name: Chromium
+        working-directory: tests/browser
+        run: bun x playwright install --with-deps chromium
+      - name: Smoke test
+        working-directory: tests/browser
+        run: bun test
+
   # The one status check branch protection is meant to require (an operator
   # step later). Each gating job is named, so an empty or shortened needs list
   # cannot pass. Each check line ends in exit 1: under bash -e a failed test
@@ -416,7 +470,7 @@ jobs:
   # push, so only a manual run may skip it.
   ci-ok:
     if: always()
-    needs: [test, floor, floor-below, lint-workflows, format, commits]
+    needs: [test, floor, floor-below, lint-workflows, format, commits, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -429,7 +483,8 @@ jobs:
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
           COMMITS: ${{ needs.commits.result }}
+          BROWSER: ${{ needs.browser.result }}
         run: |
-          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
+          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS browser=$BROWSER"
           [ "$COMMITS" = success ] || { [ "$EVENT" = workflow_dispatch ] && [ "$COMMITS" = skipped ]; } || exit 1
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] && [ "$BROWSER" = success ] || exit 1
