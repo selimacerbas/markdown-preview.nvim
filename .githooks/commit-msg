@@ -12,10 +12,13 @@
 # comment line a -m message keeps is the CI job's to catch. A failed read
 # refuses.
 #
-# The comment string is git's: core.commentString (git 2.45 on) or
-# core.commentChar, else #; auto has no fixed value, so it reads as #.
-cc=$(git config core.commentString || git config core.commentChar || echo '#')
-case $cc in '' | auto) cc='#' ;; esac
+# The comment string is git's: core.commentString (git 2.45 on) and
+# core.commentChar are one setting to git and the value read last wins, so
+# the last of the two in git's own order is taken; else #; auto (in any
+# case) has no fixed value, so it reads as #.
+cc=$(git config --get-regexp '^core\.comment(char|string)$' 2>/dev/null | tail -n 1 | sed 's/^[^ ]* //')
+[ -n "$cc" ] || cc='#'
+case $cc in [Aa][Uu][Tt][Oo]) cc='#' ;; esac
 # Escaped, so the scissors pattern reads the comment string literally.
 esc=$(printf '%s\n' "$cc" | sed 's/[[\/.^$*]/\\&/g')
 raw=$(sed "/^$esc -\{24\} >8 -\{24\}\$/,\$d" "$1") || exit 1
