@@ -3,9 +3,12 @@ name: ci
 on:
   push:
     branches: [main]
-  # edited is listed because the title becomes the squash commit's subject,
-  # so a retitled pull request is judged again.
+  # edited is listed because the title and the body become the squash
+  # commit, so an edited pull request is judged again. main is the one
+  # protected base; a pull request into an older base would judge main's
+  # own history.
   pull_request:
+    branches: [main]
     types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
@@ -88,6 +91,11 @@ jobs:
       # in a callback reach the exit code through H.finish() (tests/helpers.lua).
       - name: Headless tests
         run: bash tests/run.sh
+      # One leg is enough for a POSIX sh script with no Neovim in it; it runs
+      # after a red suite too, as make test runs both.
+      - name: Commit-message policy test
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        run: sh tests/message_policy_test.sh
 
   # The floor this plugin requires (the README states it from the floor
   # commit on): the first 0.10 release, not its last patch.
@@ -291,8 +299,8 @@ jobs:
       - name: make fmt-check
         run: make fmt-check
 
-  # The pull request arm judges a contributor's commits and title before they
-  # land; the push arm reports what already landed on main, a direct push and
+  # The pull request arm judges a contributor's commits, title and body before
+  # they land; the push arm reports what already landed on main, a direct push and
   # the merge or squash commit GitHub composes included. A push range it
   # cannot read is noticed, never judged.
   commits:
@@ -304,29 +312,41 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # The title becomes the squash commit's subject with " (#N)" appended,
-      # so it is at most 65 characters and carries no em dash.
-      - name: Pull request title
+      # The squash setting makes the title the subject, with " (#N)" appended,
+      # and the body the commit body, so the title is at most 65 characters
+      # and both are judged as the message they become.
+      - name: Pull request title and body
         if: github.event_name == 'pull_request'
         env:
           TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
           # ${#TITLE} counts characters, not bytes, only under a UTF-8 locale.
           LC_ALL: C.UTF-8
         run: |
+          set -euo pipefail
           fail=0
-          # Built by printf, since this file must not carry the character.
-          case $TITLE in
-            *"$(printf '\342\200\224')"*)
-              printf '::error::the title carries the em dash character: %s\n' "$TITLE"
-              fail=1
-              ;;
-          esac
           if [ "${#TITLE}" -gt 65 ]; then
             printf '::error::the title is %s characters, over 65: %s\n' "${#TITLE}" "$TITLE"
             fail=1
           fi
+          if out=$(printf '%s\n\n%s\n' "$TITLE" "$BODY" | .githooks/message-policy - 2>&1); then
+            rc=0
+          else
+            rc=$?
+          fi
+          case $rc in
+            0) ;;
+            1)
+              printf '%s\n' "$out" | sed 's/^/::error::the title or the body (see CONTRIBUTING.md): /'
+              fail=1
+              ;;
+            *)
+              printf '::error::the message policy could not judge the title and the body (exit %s): %s\n' "$rc" "$out"
+              exit 2
+              ;;
+          esac
           exit "$fail"
-      - name: No attribution trailer or em dash in the messages
+      - name: The message policy on each commit
         if: ${{ !cancelled() }}
         env:
           EVENT: ${{ github.event_name }}
@@ -369,17 +389,24 @@ jobs:
             exit 0
           fi
           echo "judging $count commits in $range"
+          shas=$(git rev-list --reverse "$range")
           fail=0
-          found=$(git log --format='%h %s' -i --grep='^Co-Authored-By:' "$range")
-          if [ -n "$found" ]; then
-            printf '%s\n' "$found" | sed 's/^/::error::attribution trailer (see CONTRIBUTING.md): /'
+          for sha in $shas; do
+            if out=$(git show -s --format=%B "$sha" | .githooks/message-policy - 2>&1); then
+              continue
+            else
+              rc=$?
+            fi
+            name=$(git show -s --format='%h %s' "$sha")
+            if [ "$rc" -ne 1 ]; then
+              printf '::error::%s: the message policy could not judge it (exit %s): %s\n' "$name" "$rc" "$out"
+              exit 2
+            fi
+            printf '%s\n' "$out" | while IFS= read -r line; do
+              printf '::error::%s (see CONTRIBUTING.md): %s\n' "$name" "$line"
+            done
             fail=1
-          fi
-          found=$(git log --format='%h %s' -F --grep="$(printf '\342\200\224')" "$range")
-          if [ -n "$found" ]; then
-            printf '%s\n' "$found" | sed 's/^/::error::em dash character (see CONTRIBUTING.md): /'
-            fail=1
-          fi
+          done
           exit "$fail"
 
   # The one status check branch protection is meant to require (an operator
