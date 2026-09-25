@@ -78,7 +78,7 @@ async function diagnosis(): Promise<string> {
     `neovim stderr: ${readText(errLog)}`,
     `page errors: ${JSON.stringify(pageErrors)}`,
     `console errors and warnings: ${JSON.stringify(consoleLines)}`,
-    `pending requests: ${JSON.stringify([...pending].map((r) => r.url()))}`,
+    `pending requests (the event stream left out): ${JSON.stringify([...pending].map((r) => r.url()).filter((u) => !new URL(u).pathname.startsWith("/__live/events")))}`,
     `failed requests: ${JSON.stringify(failedRequests)}`,
     `responses 400 and up: ${JSON.stringify(badResponses)}`,
     `page state: ${await pageState()}`,
@@ -129,6 +129,38 @@ async function proveOrigin() {
   }
 }
 
+async function openPage() {
+  browser = await chromium.launch({ headless: true, timeout: 20_000 });
+  page = await browser.newPage();
+  // The file watcher reloads too, so the text alone cannot tell whether the
+  // plugin's own push arrived: record each reload the page's stream carries.
+  // The check relies on the watcher naming an absolute path, which Linux
+  // gives; on macOS it names content.md relatively and holds by write order.
+  await page.addInitScript(() => {
+    const Native = window.EventSource;
+    (window as any).__reloads = [];
+    window.EventSource = class extends Native {
+      constructor(u: string | URL, init?: EventSourceInit) {
+        super(u, init);
+        this.addEventListener("reload", (e) => (window as any).__reloads.push((e as MessageEvent).data));
+      }
+    };
+  });
+  page.on("console", (m) => {
+    if (m.type() === "error" || m.type() === "warning") consoleLines.push(`${m.type()}: ${m.text()}`);
+  });
+  page.on("pageerror", (e) => pageErrors.push(e.message));
+  page.on("request", (r) => pending.add(r));
+  page.on("requestfinished", (r) => pending.delete(r));
+  page.on("requestfailed", (r) => {
+    pending.delete(r);
+    failedRequests.push(`${r.url()} ${r.failure()?.errorText ?? ""}`);
+  });
+  page.on("response", (r) => {
+    if (r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`);
+  });
+}
+
 beforeAll(async () => {
   liveServer = findLiveServer();
   console.log(`live-server.nvim: ${liveServer}`);
@@ -159,34 +191,12 @@ beforeAll(async () => {
     { env, stdout: Bun.file(outLog), stderr: Bun.file(errLog) },
   );
   url = await waitForUrl(15_000);
-  await proveOrigin();
-  browser = await chromium.launch({ headless: true, timeout: 20_000 });
-  page = await browser.newPage();
-  // The file watcher reloads too, so the text alone cannot tell whether the
-  // plugin's own push arrived: record each reload the page's stream carries.
-  await page.addInitScript(() => {
-    const Native = window.EventSource;
-    (window as any).__reloads = [];
-    window.EventSource = class extends Native {
-      constructor(u: string | URL, init?: EventSourceInit) {
-        super(u, init);
-        this.addEventListener("reload", (e) => (window as any).__reloads.push((e as MessageEvent).data));
-      }
-    };
-  });
-  page.on("console", (m) => {
-    if (m.type() === "error" || m.type() === "warning") consoleLines.push(`${m.type()}: ${m.text()}`);
-  });
-  page.on("pageerror", (e) => pageErrors.push(e.message));
-  page.on("request", (r) => pending.add(r));
-  page.on("requestfinished", (r) => pending.delete(r));
-  page.on("requestfailed", (r) => {
-    pending.delete(r);
-    failedRequests.push(`${r.url()} ${r.failure()?.errorText ?? ""}`);
-  });
-  page.on("response", (r) => {
-    if (r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`);
-  });
+  try {
+    await proveOrigin();
+    await openPage();
+  } catch (e) {
+    throw new Error(`${(e as Error).message}\n${await diagnosis()}`);
+  }
 }, 60_000);
 
 afterAll(async () => {
@@ -235,6 +245,7 @@ test("renders the buffer and follows an edit through the plugin's autocmds and S
     // A CDN library that failed to load is a gate failure with its URL named,
     // not a flake to retry blind.
     expect(failedRequests).toEqual([]);
+    expect(pageErrors).toEqual([]);
   } catch (e) {
     throw new Error(`${(e as Error).message}\n${await diagnosis()}`);
   }
