@@ -23,6 +23,8 @@ permissions:
 env:
   LIVE_SERVER_FLOOR: v1.5.0
   LIVE_SERVER_FLOOR_SHA: f98bae79fd30274524412f7514549d84391d6bb2
+  # The one bun pin, for the format and browser jobs.
+  BUN_VERSION: 1.4.2
 
 concurrency:
   # A PR's superseded run is cancelled; a push and a manual run each get
@@ -293,7 +295,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: ${{ env.BUN_VERSION }}
           token: ""
       - name: make fmt-check
         run: make fmt-check
@@ -448,19 +450,34 @@ jobs:
           version: stable
       - name: Version
         run: nvim --version | head -n 3
+      # The token's one use is the tags lookup an exact version skips.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: ${{ env.BUN_VERSION }}
           token: ""
+      # Without the lock, --frozen-lockfile resolves from the registry.
       - name: Install
         working-directory: tests/browser
-        run: bun install --frozen-lockfile
+        run: |
+          test -f bun.lock || { echo "::error::tests/browser/bun.lock is missing"; exit 1; }
+          bun install --frozen-lockfile
+      # The headless test launches the headless shell only.
       - name: Chromium
         working-directory: tests/browser
-        run: bun x playwright install --with-deps chromium
+        run: bun x playwright install --with-deps --only-shell chromium
+      # bun exits 0 when every test is skipped, so the JUnit report's counts
+      # rule: one test, none failed, none skipped.
       - name: Smoke test
         working-directory: tests/browser
-        run: bun test
+        run: |
+          bun test --reporter=junit --reporter-outfile="$RUNNER_TEMP/smoke.xml"
+          line=$(grep '<testsuites ' "$RUNNER_TEMP/smoke.xml")
+          for want in 'tests="1"' 'failures="0"' 'skipped="0"'; do
+            case $line in
+              *" $want "*) ;;
+              *) echo "::error::the smoke test report does not read $want: $line"; exit 1 ;;
+            esac
+          done
 
   # The one status check branch protection is meant to require (an operator
   # step later). Each gating job is named, so an empty or shortened needs list
