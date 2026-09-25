@@ -681,14 +681,19 @@ else
 	H.write_file(plain_ls .. "/lua/live_server/util.lua", "return {}\n")
 	-- A brace group with a comma makes building the search path raise E220
 	-- here (measured), which the refusal names in place of a raw traceback.
-	-- The hosted Windows run exited 1 without that text, which fits a
-	-- runtimepath that reads the brace literally and loads the checkout: that
-	-- outcome is a counted skip, and any other stays red with the output.
+	-- The hosted Windows runner drops the entry instead, a glob that matches
+	-- nothing, with no error (measured), so the proof finds no hit and the
+	-- refusal names the reason: the same refusal, reached another way. A
+	-- runtimepath that reads the brace literally loads the checkout, a
+	-- counted skip; any other outcome stays red with the output.
 	local braced = base .. "/d{a,b}/checkout"
 	checkout(braced)
 	local brace_want = "child_test%.lua:2: "
 		.. vim.pesc(("the checkout at %s does not resolve: the runtimepath raised "):format(H.canon(braced)))
 		.. "[^\n]*E220"
+	local brace_dropped = "child_test%.lua:2: "
+		.. vim.pesc(("the checkout at %s does not resolve: nil ("):format(H.canon(braced)))
+		.. "[^\n]*a brace"
 	local brace_code, brace_out = child_exit(
 		'H.rtp()\nH.write_line("the checkout loaded")\nH.ok(true, "loaded")\nH.finish()',
 		"",
@@ -705,10 +710,19 @@ else
 			1,
 			rtp_cases[2]
 		)
+	elseif brace_out:find(brace_dropped) then
+		eq(brace_code, 1, rtp_cases[2] .. " (the runtimepath drops the entry here: the proof's refusal, no E220)")
 	elseif brace_code == 0 and brace_out:find("the checkout loaded", 1, true) then
 		H.skip(rtp_cases[2] .. " (the runtimepath reads the brace literally here: the checkout loaded without E220)")
 	else
-		eq(("exit %s without E220; the child wrote %s"):format(brace_code, vim.inspect(brace_out)), 1, rtp_cases[2])
+		eq(
+			("exit %s without E220 or the proof's refusal; the child wrote %s"):format(
+				brace_code,
+				vim.inspect(brace_out)
+			),
+			1,
+			rtp_cases[2]
+		)
 	end
 	-- The runtimepath gets the checkout by the name the helper was loaded
 	-- through, so a link without a comma loads where the physical name would
@@ -895,11 +909,15 @@ else
 	H.skip("H.canon raises ELOOP on a symlink loop reached past a missing name (no symlink here)")
 	H.skip("H.same_path raises ELOOP through H.canon on a symlink loop (no symlink here)")
 end
--- The error a raise carries, or what came back instead, cut to a readable
--- length (a long spelling comes back whole).
+-- A value a row quotes, cut to a readable length: a long spelling comes
+-- back whole, and a luv error quotes the name it could not resolve.
+local function cut(s)
+	return #s > 200 and (s:sub(1, 200) .. "...") or s
+end
+-- The error a raise carries, or what came back instead, cut.
 local function raised_errno(path, errno)
 	local got = canon_or_raise(path)
-	return got:match("^raised (H%.canon: " .. errno .. ")") or got:sub(1, 200)
+	return got:match("^raised (H%.canon: " .. errno .. ")") or cut(got)
 end
 -- A spelling over PATH_MAX (1024 bytes on macOS, 4096 on Linux) that climbs
 -- back to a directory that exists. Whether it resolves is the platform's
@@ -908,7 +926,9 @@ end
 -- short enough to resolve; glibc's allocates its own buffer and resolves it
 -- (read from its source; the ubuntu job is the measurement), which H.canon
 -- must then answer with. The row asks the platform first and pins that
--- answer; any other answer stays red, quoted.
+-- answer; any other answer stays red, quoted. The spelling climbs back to
+-- phys, so a resolution is pinned to phys's own name as well: H.canon's
+-- answer and realpath's, each cut, against it.
 local long = p .. "/phys" .. ("/t/.."):rep(1000)
 local long_cases = {
 	"a spelling over PATH_MAX that this realpath refuses raises ENAMETOOLONG",
@@ -919,10 +939,15 @@ if platform_kind == "ENAMETOOLONG" then
 	eq(raised_errno(long, "ENAMETOOLONG"), "H.canon: ENAMETOOLONG", long_cases[1])
 	H.skip(long_cases[2] .. " (this realpath refuses a spelling over PATH_MAX)")
 elseif platform_real then
-	eq(canon_or_raise(long):sub(1, 200), vim.fs.normalize(platform_real, { expand_env = false }), long_cases[2])
+	local short = vim.fs.normalize(assert(uv.fs_realpath(p .. "/phys")), { expand_env = false })
+	eq(
+		cut(canon_or_raise(long)) .. " / " .. cut(vim.fs.normalize(platform_real, { expand_env = false })),
+		short .. " / " .. short,
+		long_cases[2]
+	)
 	H.skip(long_cases[1] .. " (this realpath resolves a spelling over PATH_MAX)")
 else
-	eq(("realpath answered %s"):format(tostring(platform_err)), "ENAMETOOLONG or a name", long_cases[1])
+	eq(("realpath answered %s"):format(cut(tostring(platform_err))), "ENAMETOOLONG or a name", long_cases[1])
 	H.skip(long_cases[2] .. " (this realpath neither refused nor resolved it)")
 end
 -- A refused search names a file that exists and cannot be resolved, in the
