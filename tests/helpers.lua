@@ -346,7 +346,9 @@ function H.rtp()
 			local entry = vim.fs.normalize(vim.fn.fnamemodify(found, ":p"), { expand_env = false })
 			local dir = H.canon(found)
 			vim.opt.runtimepath:prepend(entry)
-			-- The plugin requires both modules and server.lua requires util.
+			-- The modules the plugin loads, as the pinned floor ships them: server,
+			-- and util, which server requires. A module a newer live-server
+			-- requires beside them joins the list with the floor bump.
 			for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
 				refusal = unproven(
 					dir,

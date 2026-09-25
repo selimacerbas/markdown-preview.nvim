@@ -12,22 +12,23 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm. This f
 - `lua/markdown_preview/remote.lua`: HTTP event injection for secondary instances (scroll sync)
 - `plugin/markdown-preview.lua`: the floor check and the user commands (`:MarkdownPreview`, `:MarkdownPreviewRefresh`, `:MarkdownPreviewStop`)
 - `assets/index.html`: the browser preview app (CSS plus JS, one file)
+- `lazy.lua`: the spec lazy.nvim reads from this plugin, listing live-server.nvim alone; it stays in step with the README's lazy.nvim snippet
 - `tests/`: the headless suites, `helpers.lua` (the harness), `run.sh` (the runner) and `floor_smoke.sh` (the below-floor smoke)
 
 ## Sibling dependency
 
 - live-server.nvim (`selimacerbas/live-server.nvim`, cloned beside this repo as `../live-server.nvim`) is the pure Lua HTTP server with SSE this plugin drives; one maintainer edits both, and commits stay per repo.
-- The live-server floor is v1.5.0, written once as `H.live_server_floor` in `tests/helpers.lua`; CI checks that line against its pinned tag and runs the gating test jobs on that tag.
+- The live-server floor is v1.5.0 in three places that move together: `H.live_server_floor` in `tests/helpers.lua`, and `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `.github/workflows/ci.yml`; the workflow's `live-server floor is the pinned tag` step reds when they disagree, and the gating test jobs run on that commit.
 - live-server exports `require("live_server.server").features` (`token_auth`, `host_binding`, `asset_route`); the plugin reads `asset_route` and warns once when it is missing.
 - APIs used: `server.start(cfg)` (an instance with `.port`), `server.stop(inst)`, `server.reload(inst, path)`, `server.send_event(inst, event, data)`, `server.update_target(inst, root, index)`, `server.connected_client_count(inst)`.
 - Endpoints used: `GET /__live/inject?event=<type>&data=<json>&t=<token>` (remote.lua) and `GET /__live/asset?p=<relpath>&t=<token>` (the preview page).
 
 ## Architecture
 
-- Neovim writes the buffer to `content.md` in a workspace under `stdpath("cache")/markdown-preview/`; live-server serves it and pushes SSE events (`reload` on change, `scroll` with the cursor line).
+- Neovim writes the buffer to `content.md` in a workspace directory, by default (`workspace_dir` unset) under `stdpath("cache")/markdown-preview/`; live-server serves it and pushes SSE events (`reload` on change, `scroll` with the cursor line).
 - The browser renders with markdown-it, highlight.js, KaTeX and mermaid (loaded from CDNs) and diffs the DOM with morphdom.
 - Auth: a per-session token gates `content.md`, the `asset_root` sidecar, the SSE stream, the inject endpoint and the asset route; on a non-loopback `host` the index page is gated too and carries no token, which the browser takes from the `?t=` URL.
-- Instance modes: `takeover` (default; one shared workspace and port 8421, a lock file elects the primary) and `multi` (a per-buffer workspace and a server per instance on an OS-assigned port).
+- Instance modes: `takeover` (the default; one shared workspace, port 8421 under the default `port = 0`, a lock file elects the primary) and `multi` (a per-buffer workspace, or `workspace_dir` when set, and a server per instance on an OS-assigned port under the default `port = 0`).
 - `mermaid_renderer = "rust"` pre-renders mermaid fences through the `mmdr` CLI; the default renders them in the browser.
 
 ## Conventions
@@ -58,8 +59,8 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm. This f
 
 - `tests/helpers.lua` is one source with live-server.nvim's copy outside its `H.rtp` region and the `H.live_server_floor` block, indentation aside (tabs here, 4 spaces there); live-server's copy is the source, so a change lands there first.
 - Isolation: `tests/run.sh` points the four XDG directories at a private `mktemp -d` before Neovim starts (a caller's exported one is kept), and `H.isolate()` moves cache, data and state again before the suite loads the plugin, failing loud when `stdpath()` does not follow.
-- Lookup: `H.rtp()` takes `$LIVE_SERVER_RTP`, then `./live-server-rtp` (the CI checkout), then `../live-server.nvim`; the first that exists wins, or the suite raises.
-- Proof: every module of this plugin, and live-server's `server` and `util`, must resolve from the chosen entries, or the suite raises instead of loading an installed copy.
+- Lookup: `H.rtp()` takes `$LIVE_SERVER_RTP`, then `./live-server-rtp` (the CI checkout), then `../live-server.nvim`; a set `LIVE_SERVER_RTP` (empty reads as unset) that is not a directory raises instead of falling through, otherwise the first that exists wins, and finding none raises.
+- Proof: every module of this plugin, and live-server's `server` and `util` (the modules the plugin loads, as the pinned floor ships them), must resolve from the chosen entries, or the suite raises instead of loading an installed copy.
 - One canonical path form: `H.canon` gives a path one spelling (absolute, links resolved, forward slashes), and `H.same_path` compares two, folding case where `H.fs_folds_case` measured that the filesystem folds it.
 - Exit rulings: the exit code is the ruling; a red suite, one that ends without `H.finish()`, and one whose callback raised exit 1, whatever the suite's own quits, `os.exit` calls and callbacks do.
 - Every ledger line is written as a line by `H.write_line` (straight to stdout, its own newline), and `tests/run.sh` fails a suite whose output has no `Results:` line.
