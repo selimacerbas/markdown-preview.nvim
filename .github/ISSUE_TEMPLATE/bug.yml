@@ -36,11 +36,11 @@ body:
     id: config
     attributes:
       label: Minimal config
-      description: The smallest `setup({...})` and plugin spec that reproduces it.
+      description: The smallest `setup({...})` and plugin spec that reproduces it. This plugin makes a fresh token per session; replace a fixed `token` in a live-server.nvim `setup` you paste with `<redacted>`.
       render: lua
   - type: textarea
     id: health
     attributes:
       label: Diagnostics
-      description: The output of `:messages` after the failure, and `:checkhealth markdown_preview` once your version has it.
+      description: The output of `:messages` after the failure, and `:checkhealth markdown_preview` once your version has it. A failed browser launch prints the preview URL with its token, so replace the `?t=<token>` query with `?t=<redacted>`.
       render: text
