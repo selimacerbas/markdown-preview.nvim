@@ -8,3 +8,10 @@ updates:
     # bump PR proposes it.
     cooldown:
       default-days: 7
+  # Bumps the exact Playwright pin: Dependabot's bun support is version updates only.
+  - package-ecosystem: bun
+    directory: /tests/browser
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
