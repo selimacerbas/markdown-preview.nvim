@@ -4,14 +4,14 @@ All notable changes to this project. The format follows Keep a Changelog; versio
 
 ## [Unreleased]
 
+### Changed
+
+- The start-failure notification reads `Markdown Preview: failed to start server (port <port>): <reason>`.
+
 ### Removed
 
 - **BREAKING:** Neovim 0.9, which the README listed as supported. Every release since v1.0.0 needed Neovim 0.10 and failed at first use on 0.9; the requirement is now checked at load, so on 0.9 the plugin shows one notification, "markdown-preview.nvim requires Neovim 0.10 or newer", and every command refuses with the same message.
 - The unreferenced 7 MB demo gif, so a fresh checkout is smaller.
-
-### Changed
-
-- The start-failure notification reads `Markdown Preview: failed to start server (port <port>): <reason>`.
 
 ### Security
 
@@ -220,3 +220,21 @@ Complete rewrite from `mermaid-playground.nvim` to `markdown-preview.nvim`.
   end,
 }
 ```
+
+[Unreleased]: https://github.com/selimacerbas/markdown-preview.nvim/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.10.0
+[1.9.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.9.0
+[1.8.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.8.0
+[1.7.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.7.0
+[1.6.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.6.0
+[1.5.3]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.5.3
+[1.5.2]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.5.2
+[1.5.1]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.5.1
+[1.5.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.5.0
+[1.4.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.4.0
+[1.3.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.3.0
+[1.2.1]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.2.1
+[1.2.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.2.0
+[1.1.1]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.1.1
+[1.1.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.1.0
+[1.0.0]: https://github.com/selimacerbas/markdown-preview.nvim/releases/tag/v1.0.0

@@ -1,14 +1,20 @@
 #!/bin/sh
-# Refuses an attribution trailer (the maintainer authors every commit) and the
-# em dash character, the two things the CI commits job refuses in a pull
-# request. The character is built by printf, since this file must not carry
-# it and POSIX sh has no $'...'.
+# Refuses an attribution trailer (a commit names its author alone) and the
+# em dash character in the message git records, the two things the CI
+# commits job refuses. The character is built by printf, since this file
+# must not carry it and POSIX sh has no $'...'.
 #
-# Git hands this hook the message file before it cuts the text below the
-# scissors line, and git commit -v puts the staged diff there, so a diff line
-# carrying the character would refuse a clean message (measured). The cut is
-# made here first; a failed read refuses the commit.
-msg=$(sed '/ -\{24\} >8 -\{24\}$/,$d' "$1") || exit 1
+# Git hands this hook the raw message file: git commit -v adds the staged
+# diff below its scissors line, and the template's comment lines name the
+# branch and the staged files, so either could refuse a clean message
+# (measured). So the text is cut at git's own scissors line and its comment
+# lines are dropped first, as git's default cleanup after an editor does; a
+# comment line a -m message keeps is the CI job's to catch. A failed read
+# refuses.
+cc=$(git config core.commentChar) || cc='#'
+case $cc in '' | auto | ??*) cc='#' ;; esac
+raw=$(sed '/^. -\{24\} >8 -\{24\}$/,$d' "$1") || exit 1
+msg=$(printf '%s\n' "$raw" | CC=$cc awk 'index($0, ENVIRON["CC"]) != 1')
 dash=$(printf '\342\200\224')
 fail=0
 if printf '%s\n' "$msg" | grep -qi '^Co-Authored-By:'; then

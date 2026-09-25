@@ -3,7 +3,10 @@ name: ci
 on:
   push:
     branches: [main]
+  # edited is listed because the title becomes the subject of a merge or
+  # squash commit, so a retitled pull request is judged again.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 permissions:
@@ -288,11 +291,12 @@ jobs:
       - name: make fmt-check
         run: make fmt-check
 
-  # A pull request's own commits are the range this can judge: main keeps
-  # the trailers it already carries, since no history is rewritten. On a push
-  # the job is skipped, which ci-ok accepts for this job alone.
+  # The pull request arm judges a contributor's commits and title before they
+  # land; the push arm reports what already landed on main, a direct push and
+  # the merge or squash commit GitHub composes included. A push range it
+  # cannot read is noticed, never judged.
   commits:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -300,32 +304,78 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: No attribution trailer or em dash in the messages
+      - name: Pull request title
+        if: github.event_name == 'pull_request'
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          TITLE: ${{ github.event.pull_request.title }}
+          # ${#TITLE} counts characters, not bytes, only under a UTF-8 locale.
+          LC_ALL: C.UTF-8
         run: |
-          set -euo pipefail
-          # The log is written first so an unreadable range fails here, not
-          # as a silent "no trailer" through an empty pipe.
-          git log --format=%B "$BASE..$HEAD" > "$RUNNER_TEMP/messages"
-          test -s "$RUNNER_TEMP/messages"
-          # grep's 1 is "none found" and 2 is a failure, which an if alone
-          # would read as a clean range.
-          found() {
-            rc=0
-            grep -q "$@" "$RUNNER_TEMP/messages" || rc=$?
-            if [ "$rc" -gt 1 ]; then exit "$rc"; fi
-            [ "$rc" -eq 0 ]
-          }
           fail=0
-          if found -i '^Co-Authored-By:'; then
-            echo "::error::a commit carries an attribution trailer; see CONTRIBUTING.md"
+          # Built by printf, since this file must not carry the character.
+          case $TITLE in
+            *"$(printf '\342\200\224')"*)
+              printf '::error::the title carries the em dash character: %s\n' "$TITLE"
+              fail=1
+              ;;
+          esac
+          if [ "${#TITLE}" -gt 72 ]; then
+            printf '::error::the title is %s characters, over 72: %s\n' "${#TITLE}" "$TITLE"
             fail=1
           fi
-          # Built by printf, since this file must not carry the character.
-          if found -F -e "$(printf '\342\200\224')"; then
-            echo "::error::a commit message carries the em dash character; see CONTRIBUTING.md"
+          exit "$fail"
+      - name: No attribution trailer or em dash in the messages
+        if: ${{ !cancelled() }}
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            # The test merge's first parent is the base GitHub merged into;
+            # pull_request.base.sha goes stale once the branch merges main.
+            range="$(git rev-parse "$GITHUB_SHA^1")..$PR_HEAD"
+          else
+            # Empty or all zeros is a push with no earlier tip; a tip missing
+            # from the clone was dropped by a force push.
+            case $BEFORE in
+              *[!0]*) ;;
+              *)
+                echo "::notice::no earlier tip on this push; nothing judged"
+                exit 0
+                ;;
+            esac
+            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "::notice::the earlier tip $BEFORE is not in the clone; nothing judged"
+              exit 0
+            fi
+            if ! base=$(git merge-base "$BEFORE" "$GITHUB_SHA"); then
+              echo "::notice::$BEFORE and $GITHUB_SHA share no history; nothing judged"
+              exit 0
+            fi
+            range="$base..$GITHUB_SHA"
+          fi
+          count=$(git rev-list --count "$range")
+          if [ "$count" -eq 0 ]; then
+            if [ "$EVENT" = pull_request ]; then
+              echo "::error::the pull request range $range holds no commit"
+              exit 1
+            fi
+            # A rewind or a re-push of the same tip lands no new commit.
+            echo "::notice::no new commit in $range; nothing judged"
+            exit 0
+          fi
+          echo "judging $count commits in $range"
+          fail=0
+          found=$(git log --format='%h %s' -i --grep='^Co-Authored-By:' "$range")
+          if [ -n "$found" ]; then
+            printf '%s\n' "$found" | sed 's/^/::error::attribution trailer (see CONTRIBUTING.md): /'
+            fail=1
+          fi
+          found=$(git log --format='%h %s' -F --grep="$(printf '\342\200\224')" "$range")
+          if [ -n "$found" ]; then
+            printf '%s\n' "$found" | sed 's/^/::error::em dash character (see CONTRIBUTING.md): /'
             fail=1
           fi
           exit "$fail"
@@ -334,15 +384,17 @@ jobs:
   # step later). Each gating job is named, so an empty or shortened needs list
   # cannot pass. Each check line ends in exit 1: under bash -e a failed test
   # inside an && list does not stop the script, so a later line that passed
-  # would pass a red run (measured).
+  # would pass a red run (measured). commits runs on every pull request and
+  # push, so only a manual run may skip it.
   ci-ok:
     if: always()
     needs: [test, floor, floor-below, lint-workflows, format, commits]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every gating job succeeded (commits is skipped on a push)
+      - name: Every gating job succeeded (commits is skipped on a manual run)
         env:
+          EVENT: ${{ github.event_name }}
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
           FLOOR_BELOW: ${{ needs.floor-below.result }}
@@ -350,6 +402,6 @@ jobs:
           FORMAT: ${{ needs.format.result }}
           COMMITS: ${{ needs.commits.result }}
         run: |
-          echo "test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
-          [ "$COMMITS" = success ] || [ "$COMMITS" = skipped ] || exit 1
+          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
+          [ "$COMMITS" = success ] || { [ "$EVENT" = workflow_dispatch ] && [ "$COMMITS" = skipped ]; } || exit 1
           [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
