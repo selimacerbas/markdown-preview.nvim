@@ -24,6 +24,7 @@ Live **Markdown preview** for Neovim with first-class **Mermaid diagram** suppor
 ```lua
 {
   "selimacerbas/markdown-preview.nvim",
+  -- a live-server.nvim checkout under another directory name needs name = "live-server.nvim" in its spec, so lazy.nvim merges it with this plugin's declaration instead of cloning upstream beside it
   dependencies = { "selimacerbas/live-server.nvim" },
   config = function()
     require("markdown_preview").setup({
@@ -128,7 +129,7 @@ require("markdown_preview").setup({
 
   yaml_mode = "panel",                  -- front matter: "panel" (collapsible above preview), "hide", or "raw"
 
-  allow_raw_html = true,                -- render raw HTML in markdown; set false for untrusted files (see Security)
+  allow_raw_html = true,                -- render raw HTML in markdown; false is meant to render it as text and is being hardened (see Security)
 
   scroll_sync = true,                   -- browser follows cursor position
 
@@ -268,11 +269,11 @@ Browser-side libraries are loaded from CDN (cached by your browser):
 
 ## Security
 
-- **Local by default.** The preview server binds to `127.0.0.1`. Your buffer content (`content.md`), the SSE stream, and the event-injection endpoint all require a per-session 128-bit token; with a non-loopback `host`, the preview page itself requires it too (see *Remote access* above).
-- **Raw HTML is rendered by default** (GitHub-like). HTML embedded in markdown runs inside the preview page, so if you preview markdown you didn't write, set `allow_raw_html = false` to have it rendered as plain text instead.
+- **Local by default.** The preview server binds to `127.0.0.1`. A per-session 128-bit token gates five surfaces: your buffer content (`content.md`), the `asset_root` sidecar, the SSE stream, the event-injection endpoint and the asset route; with a non-loopback `host`, the preview page itself requires it too (see *Remote access* above). [SECURITY.md](SECURITY.md) says what the token keeps out on each bind.
+- **Raw HTML is rendered by default** (GitHub-like). HTML embedded in markdown runs inside the preview page. With `allow_raw_html = false` the preview is meant to render embedded HTML as text, and that switch is being hardened, so a file you do not trust is previewed at your own risk today.
 - **Browser libraries load from CDNs** (jsdelivr/unpkg, see *Dependencies*). Nothing from your machine is sent to them, but rendering requires internet access. Vendoring the assets locally is planned ([#27](https://github.com/selimacerbas/markdown-preview.nvim/issues/27)).
 - **`custom_css` files are inlined into the preview page** verbatim. Point it only at files you trust.
-- **Relative images are served from the previewed file's directory.** The token-gated asset route can serve *any* file at or below that directory (not just images), so on a non-loopback `host` anyone holding the tokenized URL could request other files there (`.env`, `secrets.txt`, …). Keep sensitive files out of the directory tree you preview from when binding to the network, or prefer an SSH tunnel.
+- **Relative images are served from the previewed file's directory.** The token-gated asset route can serve *any* file at or below that directory (not just images). A previewed file's raw HTML runs in a page that holds the token, so on any bind it can read every file under the source file's directory through the asset route (`.env`, `secrets.txt`, …); on a non-loopback `host` anyone holding the tokenized URL can too. Keep sensitive files out of the directory tree you preview from, and prefer an SSH tunnel to a network bind.
 - The takeover-mode lock file (which contains the session token) is written with mode `0600`.
 
 ---
@@ -313,12 +314,15 @@ markdown-preview.nvim/
 ├─ plugin/markdown-preview.lua       -- commands
 ├─ lua/markdown_preview/
 │  ├─ init.lua                       -- main logic (server, refresh, workspace, instance modes)
+│  ├─ floor.lua                      -- the Neovim requirement and its message
 │  ├─ util.lua                       -- fs helpers, workspace resolution
 │  ├─ ts.lua                         -- Tree-sitter mermaid extractor + fallback
 │  ├─ lock.lua                       -- lock file management (takeover mode coordination)
 │  └─ remote.lua                     -- HTTP event injection (secondary scroll sync)
-└─ assets/
-   └─ index.html                     -- browser preview app
+├─ assets/
+│  └─ index.html                     -- browser preview app
+├─ lazy.lua                          -- the spec lazy.nvim reads: live-server.nvim as a dependency
+└─ tests/                            -- the headless suites, their harness and runner
 ```
 
 ---
@@ -331,4 +335,4 @@ markdown-preview.nvim/
 - [highlight.js](https://highlightjs.org/) for syntax highlighting
 - [morphdom](https://github.com/patrick-steele-idem/morphdom) for efficient DOM updates
 
-PRs and ideas welcome!
+PRs and ideas welcome: [CONTRIBUTING.md](CONTRIBUTING.md) names the commands CI runs and the commit rules, and [SECURITY.md](SECURITY.md) says how to report a vulnerability privately.

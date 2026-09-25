@@ -1,8 +1,12 @@
 # Changelog
 
-All notable changes to this project. The format follows Keep a Changelog; versions follow SemVer.
+All notable changes to this project; versions follow SemVer. From `[Unreleased]` on, the format follows Keep a Changelog. The sections below it are the release notes as published on GitHub, with their headings moved one level down and the em dash written as a colon.
 
 ## [Unreleased]
+
+### Added
+
+- `lazy.lua`: lazy.nvim installs live-server.nvim from this plugin's own declaration, so a spec with no `dependencies` line still gets it.
 
 ### Changed
 
@@ -15,7 +19,7 @@ All notable changes to this project. The format follows Keep a Changelog; versio
 
 ### Security
 
-- A takeover-mode lock file that an older version left readable by other local users (mode 0644) is made private (0600) before the session token is written to it; the 0600 mode used to apply only to a newly created file.
+- The takeover-mode lock file is set to mode 0600 before the session token is written to it; an older version applied 0600 only to a file it created, so a lock file that already existed stayed 0644. The loopback preview page still carries the token (SECURITY.md).
 
 ## [1.10.0] - 2026-07-07
 
