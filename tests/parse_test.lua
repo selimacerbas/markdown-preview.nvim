@@ -26,4 +26,20 @@ for _, rel in ipairs(files) do
 	H.ok(chunk ~= nil, rel .. " parses" .. (err and (": " .. err) or ""))
 end
 
+-- A wrong repository name or a self-named entry in lazy.lua would make
+-- lazy.nvim install the wrong plugin or clone upstream beside the user's
+-- copy, so its content is pinned whole.
+H.section("Section 2: lazy.lua declares live-server.nvim alone")
+local ok_lazy, spec = pcall(dofile, H.root .. "/lazy.lua")
+H.ok(ok_lazy, "lazy.lua loads" .. (ok_lazy and "" or (": " .. tostring(spec))))
+local entry = ok_lazy and type(spec) == "table" and spec[1] or nil
+H.ok(
+	type(spec) == "table" and vim.tbl_count(spec) == 1 and type(entry) == "table",
+	"lazy.lua returns a table of exactly one spec"
+)
+H.ok(
+	type(entry) == "table" and entry[1] == "selimacerbas/live-server.nvim" and vim.tbl_count(entry) == 1,
+	'the spec is { "selimacerbas/live-server.nvim" } with no other key'
+)
+
 H.finish()

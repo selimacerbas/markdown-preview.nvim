@@ -48,7 +48,7 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm. This f
 - `make test` runs `tests/run.sh` (every `tests/*_test.lua` under private XDG directories, then the help tags when `doc/` exists) and then `tests/message_policy_test.sh` (the policy script and the hook, committing in a scratch repository), and fails when either does.
 - One suite alone: `nvim --headless -u NONE -l tests/<file>_test.lua`.
 - `helpers_test`: the harness itself (root and isolation, the bounded curl, exit rulings, callback errors, `H.expect_error`, `H.rtp`, path spelling).
-- `parse_test`: every tracked Lua file parses under this Neovim's LuaJIT (it needs a git checkout).
+- `parse_test`: every tracked Lua file parses under this Neovim's LuaJIT (it needs a git checkout), and `lazy.lua` returns exactly one spec, `{ "selimacerbas/live-server.nvim" }`.
 - `rtp_test`: how `H.rtp()` proves the checkout and chooses live-server.nvim, and what it refuses.
 - `token_auth_test`: the token reaches the served page and gates `content.md`, and the lock file that holds it is private.
 - `asset_route_test`: the installed live-server exports `asset_route`, the route serves files beside the document, and the sidecar is gated.
