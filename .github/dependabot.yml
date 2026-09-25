@@ -1,7 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # "/" covers .github/workflows and a root action.yml only, so the local
+    # action's pinned checkout is listed for its bumps too.
+    directories:
+      - /
+      - /.github/actions/live-server-floor
     schedule:
       interval: weekly
     # A hijacked or broken action release gets a week to be caught before a

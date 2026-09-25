@@ -20,7 +20,7 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 ## Sibling dependency
 
 - live-server.nvim (`selimacerbas/live-server.nvim`, cloned beside this repo as `../live-server.nvim`) is the pure Lua HTTP server with SSE this plugin drives; one maintainer edits both, and commits stay per repo.
-- The live-server floor is v1.5.0 in three places that move together: `H.live_server_floor` in `tests/helpers.lua`, and `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `.github/workflows/ci.yml`; the workflow's `live-server floor is the pinned tag` step reds when they disagree, and the gating test jobs run on that commit.
+- The live-server floor is v1.5.0 in three places that move together: `H.live_server_floor` in `tests/helpers.lua`, and `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `.github/workflows/ci.yml`; the `live-server floor is the pinned tag` step of the local action `.github/actions/live-server-floor`, which the four jobs on the floor share, reds when they disagree, and the gating test jobs run on that commit.
 - live-server exports `require("live_server.server").features` (`token_auth`, `host_binding`, `asset_route`); the plugin reads `asset_route` and warns once when it is missing.
 - APIs used: `server.start(cfg)` (an instance with `.port`), `server.stop(inst)`, `server.reload(inst, path)`, `server.send_event(inst, event, data)`, `server.update_target(inst, root, index)`, `server.connected_client_count(inst)`, `server.features`, and `util.random_token(16)` from `live_server.util` (the session token).
 - Endpoints used: `GET /__live/inject?event=<type>&data=<json>&t=<token>` (remote.lua), and `GET /__live/events?t=<token>` (the event stream) and `GET /__live/asset?p=<relpath>&t=<token>` (the preview page).

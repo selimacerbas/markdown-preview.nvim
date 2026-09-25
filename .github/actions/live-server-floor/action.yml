@@ -1,0 +1,45 @@
+name: live-server floor
+description: >-
+  Check out the live-server.nvim floor at ./live-server-rtp by its pinned
+  commit, and check that the floor tag still names that commit and that
+  tests/helpers.lua's H.live_server_floor names the same tag.
+
+inputs:
+  tag:
+    description: The live-server floor tag (the workflow's LIVE_SERVER_FLOOR).
+    required: true
+  sha:
+    description: The commit the tag named when pinned (LIVE_SERVER_FLOOR_SHA).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # tests/helpers.lua and the smoke test look for live-server.nvim at
+    # ./live-server-rtp.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: selimacerbas/live-server.nvim
+        ref: ${{ inputs.sha }}
+        path: live-server-rtp
+        persist-credentials: false
+    # A moved tag is the supply-chain event this step surfaces: the checkout
+    # took the pinned commit, and the tag must still name it. The helper's
+    # floor assignment, matched as a whole line, must name the same tag, so a
+    # bump that edits one place reds even with the old line left in a comment.
+    - name: live-server floor is the pinned tag
+      shell: bash
+      env:
+        LIVE_SERVER_FLOOR: ${{ inputs.tag }}
+        LIVE_SERVER_FLOOR_SHA: ${{ inputs.sha }}
+      run: |
+        if ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
+          echo "::error::tests/helpers.lua's H.live_server_floor does not name $LIVE_SERVER_FLOOR"
+          exit 1
+        fi
+        git -C live-server-rtp fetch --depth 1 origin "refs/tags/$LIVE_SERVER_FLOOR:refs/tags/$LIVE_SERVER_FLOOR"
+        tagged=$(git -C live-server-rtp rev-parse "$LIVE_SERVER_FLOOR^{commit}")
+        if [ "$tagged" != "$LIVE_SERVER_FLOOR_SHA" ]; then
+          echo "::error::live-server $LIVE_SERVER_FLOOR names $tagged, not the pinned $LIVE_SERVER_FLOOR_SHA"
+          exit 1
+        fi
