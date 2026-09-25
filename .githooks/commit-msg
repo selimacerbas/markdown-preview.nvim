@@ -1,0 +1,22 @@
+#!/bin/sh
+# Refuses an attribution trailer (the maintainer authors every commit) and the
+# em dash character, the two things the CI commits job refuses in a pull
+# request. The character is built by printf, since this file must not carry
+# it and POSIX sh has no $'...'.
+#
+# Git hands this hook the message file before it cuts the text below the
+# scissors line, and git commit -v puts the staged diff there, so a diff line
+# carrying the character would refuse a clean message (measured). The cut is
+# made here first; a failed read refuses the commit.
+msg=$(sed '/ -\{24\} >8 -\{24\}$/,$d' "$1") || exit 1
+dash=$(printf '\342\200\224')
+fail=0
+if printf '%s\n' "$msg" | grep -qi '^Co-Authored-By:'; then
+    echo "commit-msg: attribution trailer refused (CONTRIBUTING.md, Commits)" >&2
+    fail=1
+fi
+if printf '%s\n' "$msg" | grep -qF -e "$dash"; then
+    echo "commit-msg: em dash character refused (CONTRIBUTING.md, Commits)" >&2
+    fail=1
+fi
+exit "$fail"

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/selimacerbas/markdown-preview.nvim/security/advisories/new
+    about: A vulnerability goes through private reporting, never a public issue.

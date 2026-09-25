@@ -1,0 +1,46 @@
+name: Bug report
+description: Something renders wrong, does not start, or breaks on your setup
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, what you expected.
+    validations:
+      required: true
+  - type: input
+    id: nvim
+    attributes:
+      label: Neovim version
+      description: The first line of `nvim --version`.
+      placeholder: NVIM v0.11.5
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 15.6, Ubuntu 24.04, Windows 11 with WSL2
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Plugin versions
+      description: markdown-preview.nvim and live-server.nvim, from `git -C <plugin dir> describe --tags` or your lock file.
+      placeholder: markdown-preview.nvim v1.10.0, live-server.nvim v1.5.0
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Minimal config
+      description: The smallest `setup({...})` and plugin spec that reproduces it.
+      render: lua
+  - type: textarea
+    id: health
+    attributes:
+      label: Diagnostics
+      description: The output of `:messages` after the failure, and `:checkhealth markdown_preview` once your version has it.
+      render: text

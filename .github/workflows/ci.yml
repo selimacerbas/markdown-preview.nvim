@@ -288,22 +288,68 @@ jobs:
       - name: make fmt-check
         run: make fmt-check
 
-  # The one status check branch protection is meant to require (an operator
-  # step later). Each gating job is named, so an empty or shortened needs list
-  # cannot pass.
-  ci-ok:
-    if: always()
-    needs: [test, floor, floor-below, lint-workflows, format]
+  # A pull request's own commits are the range this can judge: main keeps
+  # the trailers it already carries, since no history is rewritten. On a push
+  # the job is skipped, which ci-ok accepts for this job alone.
+  commits:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every gating job succeeded
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: No attribution trailer or em dash in the messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # The log is written first so an unreadable range fails here, not
+          # as a silent "no trailer" through an empty pipe.
+          git log --format=%B "$BASE..$HEAD" > "$RUNNER_TEMP/messages"
+          test -s "$RUNNER_TEMP/messages"
+          # grep's 1 is "none found" and 2 is a failure, which an if alone
+          # would read as a clean range.
+          found() {
+            rc=0
+            grep -q "$@" "$RUNNER_TEMP/messages" || rc=$?
+            if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+            [ "$rc" -eq 0 ]
+          }
+          fail=0
+          if found -i '^Co-Authored-By:'; then
+            echo "::error::a commit carries an attribution trailer; see CONTRIBUTING.md"
+            fail=1
+          fi
+          # Built by printf, since this file must not carry the character.
+          if found -F -e "$(printf '\342\200\224')"; then
+            echo "::error::a commit message carries the em dash character; see CONTRIBUTING.md"
+            fail=1
+          fi
+          exit "$fail"
+
+  # The one status check branch protection is meant to require (an operator
+  # step later). Each gating job is named, so an empty or shortened needs list
+  # cannot pass. Each check line ends in exit 1: under bash -e a failed test
+  # inside an && list does not stop the script, so a later line that passed
+  # would pass a red run (measured).
+  ci-ok:
+    if: always()
+    needs: [test, floor, floor-below, lint-workflows, format, commits]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every gating job succeeded (commits is skipped on a push)
         env:
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
           FLOOR_BELOW: ${{ needs.floor-below.result }}
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
+          COMMITS: ${{ needs.commits.result }}
         run: |
-          echo "test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT"
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ]
+          echo "test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
+          [ "$COMMITS" = success ] || [ "$COMMITS" = skipped ] || exit 1
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
