@@ -71,8 +71,8 @@ jobs:
           -c 'qa!'
       # -l exits 1 on a Lua error in the main chunk, where the luafile form the
       # tests once documented exited 0; a failed assertion and an error raised
-      # in a callback reach the exit code through H.finish()
-      # (tests/helpers.lua).
+      # in a callback reach the exit code through
+      # H.finish() (tests/helpers.lua).
       - name: Headless tests
         run: bash tests/run.sh
       # One leg is enough for a POSIX sh script with no Neovim in it; it runs
