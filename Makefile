@@ -13,7 +13,9 @@ test: ## Run every headless suite (tests/run.sh) and the commit-message policy t
 	@rc=0; bash tests/run.sh || rc=1; sh tests/message_policy_test.sh || rc=1; exit $$rc
 
 # Kept out of make test, which must run with no network and no browser.
+# The Makefile is shared, so a repository with no browser test says so.
 test-browser: ## Run the browser smoke test (network: Playwright's Chromium and the page's CDN libraries)
+	@test -d tests/browser || { echo 'test-browser: this repository has no browser test (tests/browser)' >&2; exit 2; }
 	@command -v bun >/dev/null 2>&1 || { echo 'test-browser: bun runs the browser test and is not installed; install it from https://bun.sh' >&2; exit 1; }
 	cd tests/browser && bun install --frozen-lockfile && bun test
 
