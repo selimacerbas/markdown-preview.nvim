@@ -3,19 +3,19 @@
 # on the message git will record. make hooks copies this file into the
 # clone's hooks directory; the policy is read from the working tree.
 #
-# Git hands this hook the raw file: in an editor session its comment lines
-# name the branch and the staged files and git commit -v adds the diff below
-# a scissors line, any of which could refuse a clean message (measured). So
-# in an editor session the comment lines are dropped and the text is cut at a
-# scissors line git wrote (one followed by a comment line); outside one git
-# keeps comment-character lines, so the whole file is judged.
+# Git hands this hook the raw file, before its own cleanup, so the cleanup
+# is reproduced by reading the file, and a file shaped like an editor
+# session (git's scissors line, or a line that is the comment string alone)
+# is cleaned like one. The CI job judges what git recorded, so a local pass
+# is never the last word. commit.cleanup picks the mode as git documents
+# it; a --cleanup= on the command line never reaches this hook.
 #
 # The comment string is the value git reads last of core.commentString and
 # core.commentChar, else #. Under auto git picks, when the editor runs, the
 # first of # ; @ ! $ % ^ & | : that starts no line of the message, and only
 # the final file reaches this hook, so the string is read from git's own
-# lines: its scissors line, else the first candidate that is a whole line
-# (the status block has one), else no editor ran and nothing is stripped.
+# lines: its scissors line, else the first candidate that is a whole line,
+# else no editor ran and git strips # lines, if any.
 LC_ALL=C
 export LC_ALL
 
@@ -30,15 +30,23 @@ cfg=$(git config --get-regexp '^core\.comment(char|string)$')
 [ $? -le 1 ] || { echo 'commit-msg: git config failed' >&2; exit 2; }
 cc=$(printf '%s\n' "$cfg" | tail -n 1 | sed 's/^[^ ]* //') || exit 2
 [ -n "$cc" ] || cc='#'
+mode=$(git config --get commit.cleanup)
+[ $? -le 1 ] || { echo 'commit-msg: git config failed' >&2; exit 2; }
 
-msg=$(CC=$cc awk '
+msg=$(CC=$cc MODE=${mode:-default} awk '
     { line[NR] = $0 }
     function scissors(c) { return c " ------------------------ >8 ------------------------" }
     # git writes two comment lines under its own scissors line; a -m or -F
     # message may carry the scissors text as its own.
     function cut_at(c, i) { return line[i] == scissors(c) && i < NR && index(line[i + 1], c) == 1 }
     END {
+        mode = ENVIRON["MODE"]
         cc = ENVIRON["CC"]
+        if (mode == "verbatim" || mode == "whitespace") {
+            for (i = 1; i <= NR; i++) print line[i]
+            exit
+        }
+        guessed = 0
         if (tolower(cc) == "auto") {
             cc = ""
             n = split("# ; @ ! $ % ^ & | :", cand, " ")
@@ -48,16 +56,18 @@ msg=$(CC=$cc awk '
             for (k = 1; k <= n && cc == ""; k++)
                 for (i = 1; i <= NR; i++)
                     if (line[i] == cand[k]) { cc = cand[k]; break }
+            if (cc == "") { cc = "#"; guessed = 1 }
         }
         editor = 0
         end = NR + 1
-        if (cc != "")
+        if (!guessed)
             for (i = 1; i <= NR; i++) {
                 if (line[i] == cc) editor = 1
                 if (cut_at(cc, i)) { editor = 1; if (end > NR) end = i }
             }
+        drop = mode == "strip" || (mode != "scissors" && editor)
         for (i = 1; i < end; i++)
-            if (!editor || index(line[i], cc) != 1) print line[i]
+            if (!drop || index(line[i], cc) != 1) print line[i]
     }' "$1") || { echo 'commit-msg: the message file could not be read' >&2; exit 2; }
 
 exec "$policy" - <<END

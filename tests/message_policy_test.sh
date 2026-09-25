@@ -4,7 +4,8 @@
 # whose hook make hooks installed, under git's own comment handling (the
 # configured strings, auto, -v, -m, -F, an editor session). GIT_EDITOR=true
 # leaves git's template in the file untouched, as a user who saves at once.
-# The CI arms of the commits job run under bash and are measured apart.
+# The CI arms of the commits job are the workflow's own steps, measured at
+# review.
 #
 # Run: sh tests/message_policy_test.sh
 set -u
@@ -115,6 +116,7 @@ com() {
     shift 3
     git -C "$repo" config --unset-all core.commentChar
     git -C "$repo" config --unset-all core.commentString
+    git -C "$repo" config --unset-all commit.cleanup
     while [ "$1" != -- ]; do
         git -C "$repo" config --add "${1%%=*}" "${1#*=}"
         shift
@@ -125,6 +127,23 @@ com() {
     got=$?
     [ "$got" = 0 ] || got=1
     judge "hook: $name" "$got" "$want" "$text"
+}
+# rec NAME HOOK RECORDED CONFIG... -- ARGS: com with HOOK as its want, then
+# the policy over the message git recorded (committed with --no-verify when
+# the hook refused) must rule RECORDED.
+rec() {
+    rname=$1 hwant=$2 rwant=$3
+    shift 3
+    com "$rname" "$hwant" '' "$@"
+    if [ "$got" != 0 ]; then
+        while [ "$1" != -- ]; do shift; done
+        shift
+        stage
+        (cd "$repo" && GIT_EDITOR=true git commit -q --no-verify "$@") >"$tmp/err" 2>&1 || { bad "recorded: $rname" commit 0; return; }
+    fi
+    git -C "$repo" log -1 --format=%B | "$policy" - 2>"$tmp/err"
+    got=$?
+    judge "recorded: $rname" "$got" "$rwant"
 }
 com 'the # default under an editor commits' 0 '' -- -e -m 'Clean subject'
 com 'the # default under -v -e commits' 0 '' -- -v -e -m 'Clean subject'
@@ -142,6 +161,18 @@ com 'a -F trailer below a literal scissors line' 1 'attribution trailer on line 
 com 'a scissors line then a non-comment line in an editor session' 1 'attribution trailer' -- -e -F "$tmp/F"
 com '-m with Co-Authored-By : is refused' 1 'attribution trailer on line 3 (Co-Authored-By)' -- -m 'Clean subject' -m 'Co-Authored-By : A'
 com 'an em dash subject under an editor is refused' 1 'em dash character (U+2014) on line 1' -- -e -m "Subject ${dash} x"
+# commit.cleanup, each mode under an editor with -v and with a -m comment
+# line, against what git recorded.
+for m in default strip scissors whitespace verbatim; do
+    case $m in default | strip | scissors) w=0 ;; *) w=1 ;; esac
+    rec "cleanup=$m under -v -e" "$w" "$w" commit.cleanup=$m -- -v -e -m 'Clean subject'
+    case $m in strip) w=0 ;; *) w=1 ;; esac
+    rec "cleanup=$m with a -m comment line" "$w" "$w" commit.cleanup=$m -- -m 'Clean subject' -m "# note ${dash}"
+done
+# A -F file with a line that is the comment string alone reads as an editor
+# session; git records its comment lines, which the CI job then refuses.
+printf 'Clean subject\n\n#\n# note %s\n' "$dash" >"$tmp/F2"
+rec 'a -F file shaped like an editor session passes the hook' 0 1 -- -F "$tmp/F2"
 mv "$repo/.githooks/message-policy" "$tmp/policy.moved"
 com 'a missing policy script cannot be judged' 1 'git commit --no-verify' -- -m 'Clean subject'
 mv "$tmp/policy.moved" "$repo/.githooks/message-policy"
