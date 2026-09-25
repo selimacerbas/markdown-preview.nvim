@@ -64,6 +64,10 @@ for s in '[skip ci]' '[ci skip]' '[no ci]' '[skip actions]' '[actions skip]'; do
     pol "the skip instruction $s" 1 "skip instruction ($s on line 1)" "Fix it $s"
 done
 pol 'a skip instruction in mixed case' 1 'skip instruction ([skip ci] on line 3)' "$(printf 'Fix it\n\nsee [Skip CI]')"
+pol 'the trailer skip-checks: true' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\n\nskip-checks: true')"
+pol 'the trailer skip-checks:true' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\n\nskip-checks:true')"
+pol 'the trailer in mixed case' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\n\n  Skip-Checks : TRUE ')"
+pol 'skip-checks: false skips nothing' 0 '' "$(printf 'Fix it\n\nskip-checks: false')"
 pol 'a message that is only a subject' 0 '' 'Fix the reload race'
 printf 'Fix it %s\n' "$dash" | "$policy" - 2>"$tmp/err"
 judge 'policy: - reads stdin' "$?" 1 'em dash character'

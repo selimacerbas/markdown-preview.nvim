@@ -28,7 +28,7 @@ Plain imperative subject of at most 72 characters; the body, wrapped at 72 colum
 
 - the em dash character (U+2014);
 - an attribution trailer: `Co-authored-by`, `Signed-off-by`, `Co-developed-by`, `Assisted-by`, `Generated-by`, `Reviewed-by`, `Acked-by`, `Tested-by`, `Suggested-by` or `Reported-by`, in any case and with or without blanks before the colon, as git reads a trailer;
-- a workflow skip instruction: `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]`, in any case; one on main leaves that push with no CI run.
+- a workflow skip instruction: `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]` anywhere, or a `skip-checks: true` trailer line (`skip-checks:true` too), in any case; one on main leaves that push with no CI run.
 
 The policy runs in three places. The commit-msg hook runs it on each commit you make. On a pull request the `commits` job refuses a title, a body or a commit that breaks it: the title and the body become the squash commit on main, and the title is at most 65 characters, since ` (#N)` is appended to it. On a push to main the same job reports what landed; it cannot refuse it. `make lint-text` refuses the em dash in the tracked files it checks.
 

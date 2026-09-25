@@ -49,14 +49,17 @@ if found -i -E -e "^[[:blank:]]*($names)[[:blank:]]*:"; then
     fail=1
 fi
 
-# GitHub skips every workflow of a push whose head commit carries one, so
-# main would have no ci-ok run for it.
+# GitHub skips every workflow of a push whose head commit carries a bracketed
+# instruction or a skip-checks trailer, so main would have no ci-ok run for it.
 what=
 for s in '[skip ci]' '[ci skip]' '[no ci]' '[skip actions]' '[actions skip]'; do
     if found -i -F -e "$s"; then
         what="$what${what:+, }$s on line $nums"
     fi
 done
+if found -i -E -e '^[[:blank:]]*skip-checks[[:blank:]]*:[[:blank:]]*true[[:blank:]]*$'; then
+    what="$what${what:+, }a skip-checks trailer on line $nums"
+fi
 if [ -n "$what" ]; then
     printf 'message-policy: a workflow skip instruction (%s)\n' "$what" >&2
     fail=1
