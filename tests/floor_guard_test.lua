@@ -138,34 +138,42 @@ local function turn_loop()
 	end)
 end
 
+-- The plugin file sourced under pcall: a raise is the answer of the row
+-- that reads the source, where it ended the suite with no Results line.
+local function source_plugin()
+	local done, err = pcall(vim.cmd, "source " .. vim.fn.fnameescape(plugin_file))
+	return not done and ("source raised " .. tostring(err)) or nil
+end
+
 H.section("Section 1: below the floor")
 H.ok(documented ~= "", "the README's command table lists the commands: " .. documented)
 -- A config that sets the load guard has opted out, and an old-Neovim host
 -- that shares the config must not be told at every start.
 vim.g.loaded_markdown_preview = 1
-vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
+local source_err = source_plugin()
 -- lazy.nvim's config still calls setup(), which answers without a word too.
 local quiet_ok, quiet_err = pcall(function()
 	require(MODULE).setup({})
 end)
 turn_loop()
 H.eq(
-	("%d notices, commands %q, setup %s"):format(
-		#notices + #refusals,
-		defined(),
-		quiet_ok and "returned" or ("raised " .. tostring(quiet_err))
-	),
+	source_err
+		or ("%d notices, commands %q, setup %s"):format(
+			#notices + #refusals,
+			defined(),
+			quiet_ok and "returned" or ("raised " .. tostring(quiet_err))
+		),
 	'0 notices, commands "", setup returned',
 	"a config that opted out hears nothing below the floor, from the plugin file or the module"
 )
 package.loaded[MODULE] = nil
 vim.g.loaded_markdown_preview = nil
-vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
+source_err = source_plugin()
 local message = require(MODULE .. ".floor").message
 H.ok(message:find("0.10", 1, true) ~= nil, "the floor text names the floor")
 -- lazy.nvim's cmd and keys specs run the command they were given, so each
 -- documented one exists below the floor to say why.
-H.eq(defined(), documented, "every documented command is defined below the floor, and no other")
+H.eq(source_err or defined(), documented, "every documented command is defined below the floor, and no other")
 -- lazy.nvim sources plugin files with :source, where an ERROR notification
 -- on 0.9 raised a Vim(source) exception, so the refusal waits for the source
 -- to return and shows once the loop turns.
@@ -238,10 +246,10 @@ for name in pairs(package.loaded) do
 		package.loaded[name] = nil
 	end
 end
-vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
+source_err = source_plugin()
 turn_loop()
 H.eq(
-	#refusals == 1 and refusals[1].msg or #refusals,
+	source_err or (#refusals == 1 and refusals[1].msg or #refusals),
 	message,
 	"without notify_once the plugin file shows the text once"
 )
