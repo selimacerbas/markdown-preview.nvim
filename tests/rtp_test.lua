@@ -400,7 +400,9 @@ fixture("a live-server directory with a brace group raises the search's own erro
 	if out:find("E220", 1, true) then
 		eq(
 			ruling(code, out, {
-				("live-server.nvim at %s does not resolve: the runtimepath raised "):format(H.canon(braced)),
+				("child_test.lua:2: live-server.nvim at %s does not resolve: the runtimepath raised "):format(
+					H.canon(braced)
+				),
 				" " .. LS_REASON,
 			}),
 			1,
