@@ -133,15 +133,19 @@ H.section("Section 3: the exit code is the ruling")
 -- of the helper, opts.prelude runs before the helper loads, opts.cwd is the
 -- child's working directory and opts.merged joins the child's stderr to its
 -- stdout at the descriptor through POSIX sh, as tests/run.sh's 2>&1 does
--- (otherwise stdout is read before stderr). The first hosted run's log reads
--- as a Windows child ending its lines in \r\n, which a pattern naming \n
--- misses (the next Windows run is the measurement), so the output is read
--- with every line end folded to \n, once, here. A case that fails names the
--- pattern it missed on one line (vim.inspect escapes the newline %q would
--- write), so a Results line inside a pattern never starts a line of this
--- suite's own log, where the runner counts them.
+-- (otherwise stdout is read before stderr); a merged case skips, counted,
+-- where no sh is on PATH (the hosted Windows runner has Git's). The first
+-- hosted run's log reads as a Windows child ending its lines in \r\n, which
+-- a pattern naming \n misses (the next Windows run is the measurement), so
+-- the output is read with every line end folded to \n, once, here. A case
+-- that fails names the pattern it missed and the child's output, each on
+-- one line (vim.inspect escapes the newlines %q would write), so a Results
+-- line inside either never starts a line of this suite's own log, where the
+-- runner looks for one at column zero. The output and vim.system's result
+-- follow the code, for a case that reads further or reads the streams apart.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
+local has_sh = vim.fn.executable("sh") == 1
 local function child_exit(body, expect, opts)
 	opts = opts or {}
 	local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
@@ -152,14 +156,14 @@ local function child_exit(body, expect, opts)
 	end
 	local r = vim.system(cmd, { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }):wait()
 	local code = H.exit_code(r)
-	if code == 124 then
-		return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
-	end
 	local out = ((r.stdout or "") .. (r.stderr or "")):gsub("\r+\n", "\n")
-	if not out:find(expect) then
-		return ("exit %d without %s"):format(code, vim.inspect(expect))
+	if code == 124 then
+		return ("killed after %d ms; the child wrote %s"):format(CHILD_TIMEOUT_MS, vim.inspect(out)), out, r
 	end
-	return code
+	if not out:find(expect) then
+		return ("exit %d without %s; the child wrote %s"):format(code, vim.inspect(expect), vim.inspect(out)), out, r
+	end
+	return code, out, r
 end
 eq(child_exit('H.ok(false, "deliberate")\nH.finish()', "FAIL: deliberate"), 1, "a failed assertion exits 1")
 -- Through H.ok, so a broken H.eq cannot vouch for itself.
@@ -298,19 +302,52 @@ eq(
 -- message begins, and the runner merges stderr into stdout, so the next
 -- ledger line ends that line first: without it the two shared one line
 -- (measured).
-if vim.fn.has("win32") == 1 then
-	H.skip("a ledger line after the suite's own message starts a line (no POSIX sh on Windows)")
-else
-	eq(
-		child_exit(
-			'print("a message the suite caused")\nH.ok(true, "after the message")\nH.finish()',
-			"a message the suite caused\n  PASS: after the message\n",
-			{ merged = true }
+-- A headless Neovim is 80 columns wide, and on 0.12.5 a print that fills a
+-- multiple of that lost its newline to the ledger line after it (measured
+-- at 80 and 160); the helper widens the screen at load. The empty echo
+-- writes nothing when no message is open, so two ledger lines in a row take
+-- no empty line between them in the merged stream either.
+local merged_cases = {
+	{
+		'print("a message the suite caused")\nH.ok(true, "after the message")\nH.finish()',
+		"a message the suite caused\n  PASS: after the message\n",
+		"a ledger line after the suite's own message starts a line",
+	},
+	{
+		('print(%q)\nH.ok(true, "after 80")\nprint(%q)\nH.ok(true, "after 160")\nH.finish()'):format(
+			("x"):rep(80),
+			("y"):rep(160)
 		),
-		0,
-		"a ledger line after the suite's own message starts a line"
-	)
+		("x"):rep(80) .. "\n  PASS: after 80\n" .. ("y"):rep(160) .. "\n  PASS: after 160\n",
+		"a ledger line after an 80-column and after a 160-column print starts a line",
+	},
+	{
+		'H.ok(true, "first")\nH.ok(true, "second")\nH.finish()',
+		"  PASS: first\n  PASS: second\n",
+		"two ledger lines in a row take no empty line between them",
+	},
+}
+for _, case in ipairs(merged_cases) do
+	if has_sh then
+		eq(child_exit(case[1], case[2], { merged = true }), 0, case[3])
+	else
+		H.skip(case[3] .. " (no sh on PATH to merge the streams)")
+	end
 end
+-- The ledger writes to stdout itself, so a suite's own print, which goes to
+-- stderr under -l, cannot stand between it and the runner's grep.
+local split_code, _, split = child_exit('print("the suite\'s own message")\nH.ok(true, "on stdout")\nH.finish()', "")
+local split_out = split and (split.stdout or ""):gsub("\r+\n", "\n") or ""
+local split_err = split and (split.stderr or ""):gsub("\r+\n", "\n") or ""
+eq(
+	("exit %s, stdout %s, stderr %s"):format(
+		tostring(split_code),
+		tostring(split_out:find("  PASS: on stdout\n", 1, true) ~= nil and not split_out:find("own message", 1, true)),
+		tostring(split_err:find("the suite's own message", 1, true) ~= nil and not split_err:find("PASS", 1, true))
+	),
+	"exit 0, stdout true, stderr true",
+	"the ledger line is on stdout and the suite's print on stderr"
+)
 -- A quit a callback still holds when the main chunk ends runs during Neovim's
 -- teardown, after the ruling, and set the exit code again (measured).
 eq(
@@ -632,30 +669,47 @@ else
 		1,
 		rtp_cases[1]
 	)
-	-- A brace group with a comma makes building the search path raise E220
-	-- (measured), which the refusal names in place of a raw traceback.
-	local braced = base .. "/d{a,b}/checkout"
-	checkout(braced)
-	eq(
-		child_exit(
-			"H.rtp()",
-			"child_test%.lua:2: "
-				.. vim.pesc(("the checkout at %s does not resolve: the runtimepath raised "):format(H.canon(braced)))
-				.. "[^\n]*E220",
-			{ helpers = braced .. "/tests/helpers.lua" }
-		),
-		1,
-		rtp_cases[2]
-	)
-	-- The runtimepath gets the checkout by the name the helper was loaded
-	-- through, so a link without a comma loads where the physical name would
-	-- be split, and H.rtp still returns the canonical directory server.lua
-	-- resolves under; markdown-preview's H.rtp finds live-server through
-	-- LIVE_SERVER_RTP here, a directory with a plain name.
+	-- A live-server with a plain name for markdown-preview's H.rtp, which
+	-- finds it through LIVE_SERVER_RTP once the checkout's own proof passes.
 	local plain_ls = base .. "/plain-ls"
 	vim.fn.mkdir(plain_ls .. "/lua/live_server", "p")
 	H.write_file(plain_ls .. "/lua/live_server/server.lua", "return {}\n")
 	H.write_file(plain_ls .. "/lua/live_server/util.lua", "return {}\n")
+	-- A brace group with a comma makes building the search path raise E220
+	-- here (measured), which the refusal names in place of a raw traceback.
+	-- The hosted Windows run exited 1 without that text, which fits a
+	-- runtimepath that reads the brace literally and loads the checkout: that
+	-- outcome is a counted skip, and any other stays red with the output.
+	local braced = base .. "/d{a,b}/checkout"
+	checkout(braced)
+	local brace_want = "child_test%.lua:2: "
+		.. vim.pesc(("the checkout at %s does not resolve: the runtimepath raised "):format(H.canon(braced)))
+		.. "[^\n]*E220"
+	local brace_code, brace_out = child_exit(
+		'H.rtp()\nH.write_line("the checkout loaded")\nH.ok(true, "loaded")\nH.finish()',
+		"",
+		{ helpers = braced .. "/tests/helpers.lua", env = { LIVE_SERVER_RTP = plain_ls } }
+	)
+	if brace_out:find("E220", 1, true) then
+		eq(
+			brace_out:find(brace_want) and brace_code
+				or ("exit %s without %s; the child wrote %s"):format(
+					brace_code,
+					vim.inspect(brace_want),
+					vim.inspect(brace_out)
+				),
+			1,
+			rtp_cases[2]
+		)
+	elseif brace_code == 0 and brace_out:find("the checkout loaded", 1, true) then
+		H.skip(rtp_cases[2] .. " (the runtimepath reads the brace literally here: the checkout loaded without E220)")
+	else
+		eq(("exit %s without E220; the child wrote %s"):format(brace_code, vim.inspect(brace_out)), 1, rtp_cases[2])
+	end
+	-- The runtimepath gets the checkout by the name the helper was loaded
+	-- through, so a link without a comma loads where the physical name would
+	-- be split, and H.rtp still returns the canonical directory server.lua
+	-- resolves under.
 	local link = base .. "/plain-checkout"
 	local linked, link_err = uv.fs_symlink(root, link, { dir = true })
 	if linked and uv.fs_stat(link .. "/tests/helpers.lua") then
@@ -837,6 +891,79 @@ else
 	H.skip("H.canon raises ELOOP on a symlink loop reached past a missing name (no symlink here)")
 	H.skip("H.same_path raises ELOOP through H.canon on a symlink loop (no symlink here)")
 end
+-- The error a raise carries, or what came back instead, cut to a readable
+-- length (a long spelling comes back whole).
+local function raised_errno(path, errno)
+	local got = canon_or_raise(path)
+	return got:match("^raised (H%.canon: " .. errno .. ")") or got:sub(1, 200)
+end
+-- A spelling over PATH_MAX (1024 bytes on macOS, 4096 on Linux) names no
+-- file the kernel will resolve, even one that climbs back to a directory
+-- that exists: the walk up raises it rather than climb to a prefix short
+-- enough to resolve. Win32 resolves .. by name before the length counts.
+if vim.fn.has("win32") == 1 then
+	H.skip("a spelling over PATH_MAX that resolves short raises ENAMETOOLONG (Win32 resolves .. by name)")
+else
+	eq(
+		raised_errno(p .. "/phys" .. ("/t/.."):rep(1000), "ENAMETOOLONG"),
+		"H.canon: ENAMETOOLONG",
+		"a spelling over PATH_MAX that resolves short raises ENAMETOOLONG"
+	)
+end
+-- A refused search names a file that exists and cannot be resolved, in the
+-- walk up and past a missing name alike. A process that searches a mode-0
+-- directory anyway (root, or a file system without POSIX modes) cannot
+-- measure it, which the stat of a name under it tells.
+local locked = p .. "/locked"
+vim.fn.mkdir(locked .. "/in", "p")
+local eacces_cases = {
+	"a name under a directory without search permission raises EACCES",
+	"a name under it reached past a missing name raises EACCES",
+}
+uv.fs_chmod(locked, 0)
+local searched = uv.fs_stat(locked .. "/in") ~= nil
+local under_locked = raised_errno(locked .. "/in", "EACCES")
+local past_missing = raised_errno(p .. "/missing/../locked/in", "EACCES")
+uv.fs_chmod(locked, 448)
+if searched then
+	for _, msg in ipairs(eacces_cases) do
+		H.skip(msg .. " (this process searches a mode-0 directory: root, or no POSIX modes)")
+	end
+else
+	eq(under_locked, "H.canon: EACCES", eacces_cases[1])
+	eq(past_missing, "H.canon: EACCES", eacces_cases[2])
+end
+-- :p leaves a relative name relative once the working directory is gone
+-- (measured), so the walk up ends at "." and H.canon raises, naming the
+-- cause, where the spelling would compare as some other file. A platform
+-- that keeps a process's working directory from removal cannot measure it.
+local gone_case = "a relative name raises once the working directory is gone"
+local _, gone_out = child_exit(
+	[[
+local uv = vim.uv
+local removed, why = uv.fs_rmdir(uv.cwd())
+if removed then
+    local done, got = pcall(H.canon, "x/y")
+    H.write_line("canon=" .. (done and ("returned " .. tostring(got)) or tostring(got)))
+else
+    H.write_line("kept=" .. tostring(why))
+end
+H.ok(true, "reached")
+H.finish()]],
+	"",
+	{ cwd = H.tmpdir() }
+)
+local kept = gone_out:match("kept=([^\n]*)")
+if kept then
+	H.skip(gone_case .. " (the working directory cannot be removed here: " .. kept .. ")")
+else
+	eq(
+		gone_out:match("canon=(H%.canon: x/y has no absolute name: the working directory is gone)")
+			or vim.inspect(gone_out),
+		"H.canon: x/y has no absolute name: the working directory is gone",
+		gone_case
+	)
+end
 -- The raise names the suite's own line: the one inside call, found by the
 -- file and the line range debug.getinfo gives for it. what is the pattern
 -- the message carries after the line, a refused name unless given.
@@ -885,6 +1012,18 @@ if looped then
 	)
 else
 	H.skip("an ELOOP reached past a missing name names the suite's line (no symlink here)")
+end
+-- H.same_path resolves both names itself, so an errno it meets names the
+-- suite's line too, not the helper's.
+if looped then
+	ok(
+		blames_caller(function()
+			H.same_path(p, loop_a)
+		end, "H%.canon: ELOOP"),
+		"an ELOOP met through H.same_path names the suite's line"
+	)
+else
+	H.skip("an ELOOP met through H.same_path names the suite's line (no symlink here)")
 end
 
 H.finish()

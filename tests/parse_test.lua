@@ -1,9 +1,9 @@
 -- tests/parse_test.lua
--- Every tracked Lua file parses under this Neovim's LuaJIT. No other suite
--- loads the plugin's entry module or plugin/, so a parse error there passed
--- every job; the list is git's, so an untracked file never enters and a
--- tree without git's index (a git archive copy, a tarball) fails here,
--- saying so, instead of checking nothing.
+-- Every tracked Lua file parses under this Neovim's LuaJIT. A file no other
+-- suite loads is parsed here too, so a parse error in it cannot pass every
+-- job; the list is git's, so an untracked file never enters and a tree
+-- without git's index (a git archive copy, a tarball) fails here, saying
+-- so, instead of checking nothing.
 --
 -- Run: nvim --headless -u NONE -l tests/parse_test.lua
 

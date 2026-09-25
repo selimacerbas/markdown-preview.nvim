@@ -46,9 +46,12 @@ end
 
 -- The name the filesystem gives a path, or nil for a name that is not there
 -- (ENOENT) or sits under a file (ENOTDIR). Any other error comes back as the
--- second value: it names a file that exists and cannot be resolved (a
--- symlink loop, a refused search), which H.canon raises at its caller's line
--- rather than compare as some other file.
+-- second value, which H.canon raises at its caller's line rather than
+-- compare as some other file: a file that exists and cannot be resolved (a
+-- symlink loop, a refused search), or a name no file can have
+-- (ENAMETOOLONG: a spelling over PATH_MAX, or a component over NAME_MAX,
+-- which cannot exist; past a missing directory such a component is looked
+-- up as a missing name, so it reads as a path until that directory is made).
 local function realpath(name)
 	local real, err, kind = uv.fs_realpath(name)
 	if real then
@@ -64,20 +67,22 @@ end
 -- the name the filesystem gives (it folds a symlink, /var against
 -- /private/var on macOS and an 8.3 short name such as RUNNER~1, which
 -- tempname() returns on Windows), with forward slashes, no trailing one and
--- a $ kept literal. The helper folds nothing by name, since a .. after a
--- symlinked directory climbs from its target as the kernel reads it:
--- realpath needs the path to exist, so the :p form resolves through its
--- deepest existing ancestor, and the missing tail is walked one component
--- at a time, a .. leaving the directory resolved so far, a . skipped and a
--- name that exists going through realpath. So a path reads the same before
--- and after a missing name in it is made, a .. that climbs out of one onto
--- a link included, and a second pass changes nothing. A link is the
--- exception: a dangling one reads as a missing name, so making its target,
--- or making a missing name as a link, moves a path through it to the
--- target. Where the filesystem folds case, a missing name moves to the case
--- it is made in, which H.same_path folds away.
-function H.canon(path)
-	require_path("H.canon", path)
+-- a $ kept literal. Only a missing name is folded by name, since nothing on
+-- disk answers for it; a .. after a symlinked directory climbs from its
+-- target as the kernel reads it: realpath needs the path to exist, so the
+-- :p form resolves through its deepest existing ancestor, and the missing
+-- tail is walked one component at a time, a name that exists going through
+-- realpath, a . skipped and a .. leaving the directory resolved so far,
+-- which after a missing name is that name's parent (the missing name is
+-- popped by name). So a path reads the same before and after a missing name
+-- in it is made, a .. that climbs out of one onto a link included, and a
+-- second pass changes nothing. A link is the exception: a dangling one
+-- reads as a missing name, so making its target, or making a missing name
+-- as a link, moves a path through it to the target. Where the filesystem
+-- folds case, a missing name moves to the case it is made in, which
+-- H.same_path folds away. Returns the name, or nil and the error H.canon
+-- and H.same_path raise at their caller's line.
+local function canon(path)
 	local full = vim.fn.fnamemodify(path, ":p")
 	if is_win then
 		full = full:gsub("\\", "/")
@@ -86,7 +91,7 @@ function H.canon(path)
 	while true do
 		local real, err = realpath(head)
 		if err then
-			error("H.canon: " .. tostring(err), 2)
+			return nil, "H.canon: " .. tostring(err)
 		end
 		if real then
 			head = real
@@ -94,6 +99,17 @@ function H.canon(path)
 		end
 		local parent = vim.fs.dirname(head)
 		if parent == head then
+			-- :p leaves a relative name relative when the working directory
+			-- is gone (measured), and the walk up then ends at ".", where the
+			-- spelling would compare as some other file.
+			if head == "." then
+				local cwd, cwd_err = uv.cwd()
+				return nil,
+					("H.canon: %s has no absolute name: the working directory %s"):format(
+						path,
+						cwd and (cwd .. " does not resolve") or ("is gone (" .. tostring(cwd_err) .. ")")
+					)
+			end
 			return vim.fs.normalize(full, { expand_env = false })
 		end
 		local name = vim.fs.basename(head)
@@ -111,7 +127,7 @@ function H.canon(path)
 			local joined = head .. (head:sub(-1) == "/" and "" or "/") .. name
 			local real, err = realpath(joined)
 			if err then
-				error("H.canon: " .. tostring(err), 2)
+				return nil, "H.canon: " .. tostring(err)
 			end
 			head = real or joined
 		end
@@ -119,16 +135,31 @@ function H.canon(path)
 	return head
 end
 
+function H.canon(path)
+	require_path("H.canon", path)
+	local name, err = canon(path)
+	if err then
+		error(err, 2)
+	end
+	return name
+end
+
 -- Whether two names denote one file. A missing name has no on-disk case for
 -- realpath to give, so the comparison folds case where the filesystem does
--- (H.fs_folds_case), and refuses to answer where that was not measured.
+-- (H.fs_folds_case), and refuses to answer where that was not measured. A
+-- name H.canon cannot resolve raises H.canon's error at this caller's line.
 function H.same_path(a, b)
 	require_path("H.same_path", a)
 	require_path("H.same_path", b)
 	if H.fs_folds_case == nil then
 		error("H.same_path: the filesystem's case fold was not measured (Neovim has no tempdir)", 2)
 	end
-	a, b = H.canon(a), H.canon(b)
+	local err_a, err_b
+	a, err_a = canon(a)
+	b, err_b = canon(b)
+	if err_a or err_b then
+		error(err_a or err_b, 2)
+	end
 	if H.fs_folds_case then
 		return a:lower() == b:lower()
 	end
@@ -241,8 +272,8 @@ H.live_server_floor = "v1.5.0"
 -- The checkout goes first on the runtimepath, by the name the helper was
 -- loaded through, and proves it is the copy require loads.
 -- live-server.nvim's copy of this file is one source with this one outside
--- H.rtp, indentation aside: here H.rtp proves this plugin's modules and then
--- finds live-server as a dependency. live-server.nvim is found from
+-- H.live_server_floor and H.rtp, indentation aside: here H.rtp proves this
+-- plugin's modules and then finds live-server as a dependency, from
 -- $LIVE_SERVER_RTP, ./live-server-rtp (the CI checkout) or the checkout's
 -- sibling live-server.nvim (the developer's clone); the first that exists
 -- wins, goes on the runtimepath by the name it was found under, and is
@@ -259,10 +290,13 @@ function H.rtp()
 	-- one of them; vim.fs.dir does not glob, where glob() would read a glob
 	-- character in H.root (it does expand an environment variable in the
 	-- path, and the runtimepath expands it the same way, so that root fails
-	-- the proof below either way).
+	-- the proof below either way). A name with a dot before .lua is no module
+	-- require can name (the dot reads as a directory): git mergetool leaves
+	-- util.BASE.12345.lua during a conflict, which as a module failed the
+	-- proof and so every suite, for a reason that named no conflict.
 	local modules = { "markdown_preview" }
 	for name, kind in vim.fs.dir(H.root .. "/lua/markdown_preview") do
-		local base = name:match("^(.+)%.lua$")
+		local base = name:match("^([%w_]+)%.lua$")
 		if kind == "file" and base and base ~= "init" then
 			table.insert(modules, "markdown_preview." .. base)
 		end
@@ -516,22 +550,29 @@ local function exit_now(code, ...)
 	return real_exit(code, ...)
 end
 
+-- On 0.12.5 a message that fills a multiple of the screen width loses its
+-- newline to the next one, and a headless Neovim is 80 columns wide, so an
+-- 80- or 160-column print fused with the ledger line after it (measured).
+-- The width is set to the most Neovim takes (10000; a larger value is
+-- clamped to it, measured on 0.10.0 and 0.12.5), so a message of a
+-- realistic width keeps its newline.
+vim.o.columns = 10000
+
 -- Every line the helper writes goes here, straight to stdout with its own
 -- newline, never through print: print writes to stderr under -l and ends a
 -- line only when the next message begins, so text written after it landed
 -- on its line (0.10.0 and 0.12.5); cq and os.exit skip the newline a normal
 -- exit writes, which glued the next line of output (a CI ::endgroup::
--- marker) onto it; on 0.12.5 a message that fills a multiple of 80 columns
--- loses its newline to the next one, so the width of a message or a temp
+-- marker) onto it; at 80 columns on 0.12.5 the width of a message or a temp
 -- path decided whether a ledger line began a line; print on 0.10.0 ends a
 -- line in \r\n and cut a long message short under textlock (all measured).
 -- A message a suite caused may still hold its line open on stderr, which the
 -- runner merges into one stream: an empty echo ends that line and writes
 -- nothing when none is open (measured on both), so consecutive ledger lines
 -- take no empty line between them. It cannot see an open message that fills
--- a multiple of 80 columns on 0.12.5, and a fast event may not echo. The
--- flush stops a C library that buffers a piped stdout from moving these
--- lines behind stderr.
+-- a multiple of the width (10000 columns, above) on 0.12.5, and a fast
+-- event may not echo. The flush stops a C library that buffers a piped
+-- stdout from moving these lines behind stderr.
 function H.write_line(line)
 	if not vim.in_fast_event() then
 		pcall(vim.api.nvim_echo, { { "" } }, false, {})

@@ -2,9 +2,10 @@
 -- Pin how H.rtp() proves the checkout and finds live-server.nvim: an override
 -- that is not a directory, a missing dependency, and a checkout or a
 -- directory the runtimepath does not resolve to raise instead of letting
--- require fall through to an installed copy; the chosen directory beats an
--- installed copy, ./live-server-rtp beats the sibling clone, a directory
--- reached through a plain-named link loads by that name, and the path it
+-- require fall through to an installed copy, each naming its reason; the
+-- chosen directory beats an installed copy, ./live-server-rtp beats the
+-- sibling clone, a directory reached through a plain-named link loads by that
+-- name, a stray dotted Lua file in the checkout is no module, and the path it
 -- returns is canonical. Every expected path is built through H.canon too, so
 -- an 8.3 name or a backslash on Windows, or /var against /private/var on
 -- macOS, never reads as a different file.
@@ -44,16 +45,26 @@ local function child(helpers, body, override, env, cwd)
 	return H.exit_code(r), (r.stdout or "") .. (r.stderr or "")
 end
 
--- The child's exit code when its output carries text, else what went wrong.
+-- The child's exit code when its output carries text (every one of them,
+-- when text is a list), else what went wrong.
 local function ruling(code, out, text)
 	if code == 124 then
 		return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
 	end
-	if not out:find(text, 1, true) then
-		return ("exit %d without %q"):format(code, text)
+	for _, want in ipairs(type(text) == "table" and text or { text }) do
+		if not out:find(want, 1, true) then
+			return ("exit %d without %q"):format(code, want)
+		end
 	end
 	return code
 end
+
+-- The reasons H.rtp's refusals give, written out here, so a reason that
+-- changes, or one swapped for another, reds the cases that name it: the
+-- checkout's own, and live-server's, which adds the files it needs.
+local RTP_SYNTAX =
+	"a name the runtimepath reads differently (a comma, a dollar sign, a glob character, a backslash, a brace, or a name ending in after)"
+local LS_REASON = "(a directory without lua/live_server/server.lua and util.lua, or " .. RTP_SYNTAX .. ")"
 
 -- A child that must succeed: its exit is asserted as child() reads it, so
 -- expected output printed before a timeout (124) or a death by signal (128
@@ -194,7 +205,7 @@ fixture("no candidate on any lookup path raises, naming the clone, the floor and
 end)
 
 code, out = child(helpers_path, "H.rtp()", H.tmpdir())
-eq(ruling(code, out, "does not resolve"), 1, "an empty override directory raises")
+eq(ruling(code, out, { "does not resolve: ", " " .. LS_REASON }), 1, "an empty override directory raises")
 
 -- The runtimepath expands $HOME in the entry when it searches, so the stub
 -- under the literal name is never the one resolved (measured) and require
@@ -218,6 +229,8 @@ fixture("an override with a $ in its name raises, naming the shadowing copy", ON
 				H.canon(base) .. "/odd$HOME-x",
 				H.canon(installed)
 			)
+				.. " "
+				.. LS_REASON
 		),
 		1,
 		msg
@@ -237,6 +250,8 @@ fixture("an override that holds an installed copy below it raises", ONE, functio
 				H.canon(data),
 				H.canon(installed)
 			)
+				.. " "
+				.. LS_REASON
 		),
 		1,
 		msg
@@ -257,6 +272,8 @@ fixture("an override without util.lua raises, naming the copy util resolves to",
 				H.canon(partial),
 				H.canon(installed)
 			)
+				.. " "
+				.. LS_REASON
 		),
 		1,
 		msg
@@ -279,6 +296,9 @@ fixture("a checkout whose path the runtimepath splits raises, naming the install
 				H.canon(split),
 				H.canon(installed_mp)
 			)
+				.. " ("
+				.. RTP_SYNTAX
+				.. ")"
 		),
 		1,
 		msg
@@ -298,7 +318,11 @@ fixture("a live-server directory that carries this plugin's modules raises, nami
 		ruling(
 			code,
 			out,
-			("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua"):format(H.root, H.canon(dep))
+			("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua (live-server.nvim at %s carries this plugin's modules too)"):format(
+				H.root,
+				H.canon(dep),
+				H.canon(dep)
+			)
 		),
 		1,
 		msg
@@ -321,16 +345,83 @@ for _, shadow in ipairs({ "lua/markdown_preview.lua", "lua/markdown_preview/lock
 			dep
 		)
 		eq(
-			ruling(code, out, ("the checkout at %s does not resolve: %s/%s"):format(H.root, H.canon(dep), shadow)),
+			ruling(
+				code,
+				out,
+				("the checkout at %s does not resolve: %s/%s (live-server.nvim at %s carries this plugin's modules too)"):format(
+					H.root,
+					H.canon(dep),
+					shadow,
+					H.canon(dep)
+				)
+			),
 			1,
 			msg
 		)
 	end)
 end
 
+-- A last component named after makes the entry an after-directory, searched
+-- after every other, so the start package answers for it (measured); the
+-- refusal names live-server's reason.
+fixture("a live-server directory named after raises, naming the copy require would load", ONE, function(msg)
+	local after = base .. "/x/after"
+	stub(after)
+	code, out = child(helpers_path, "H.rtp()", after, { XDG_DATA_HOME = data })
+	eq(
+		ruling(
+			code,
+			out,
+			("live-server.nvim at %s does not resolve: %s/lua/live_server/server.lua"):format(
+				H.canon(after),
+				H.canon(installed)
+			)
+				.. " "
+				.. LS_REASON
+		),
+		1,
+		msg
+	)
+end)
+
+-- A brace group with a comma makes building the search path raise E220
+-- here (measured), which the refusal names with live-server's reason. The
+-- hosted Windows run read a brace in the checkout's own path literally, so
+-- a directory that loads there is a counted skip, and any other outcome
+-- stays red with the child's output.
+fixture("a live-server directory with a brace group raises the search's own error", ONE, function(msg)
+	local braced = base .. "/d{a,b}"
+	stub(braced)
+	code, out = child(helpers_path, 'H.rtp()\nH.write_line("loaded=yes")\nH.ok(true, "loaded")\nH.finish()', braced)
+	if out:find("E220", 1, true) then
+		eq(
+			ruling(code, out, {
+				("live-server.nvim at %s does not resolve: the runtimepath raised "):format(H.canon(braced)),
+				" " .. LS_REASON,
+			}),
+			1,
+			msg
+		)
+	elseif code == 0 and printed(out, "loaded") == "yes" then
+		H.skip(msg .. " (the runtimepath reads the brace literally here: the directory loaded without E220)")
+	else
+		eq(("exit %s without E220: %s"):format(code, vim.inspect(out)), 1, msg)
+	end
+end)
+
 H.section("Section 2: the directory H.rtp() chooses and the path it returns")
 local plain = base .. "/plain"
 stub(plain)
+-- git mergetool leaves util.BASE.12345.lua beside util.lua during a
+-- conflict; no require names it, so the proof skips it where it once
+-- failed every suite with a reason that named no conflict.
+fixture("a checkout holding a stray dotted Lua file loads", ONE, function(msg)
+	local stray = base .. "/stray/mp"
+	local helpers = tree(stray)
+	H.write_file(stray .. "/lua/markdown_preview/util.BASE.12345.lua", "return {}\n")
+	code, out = child(helpers, 'H.rtp()\nH.ok(true, "loaded")\nH.finish()', plain)
+	eq(ruling(code, out, "Results: 1 passed, 0 failed, 0 skipped"), 0, msg)
+end)
 -- The .. resolves through the filesystem, as the directory check read it,
 -- and the path comes back canonical (on macOS /private/var, not /var).
 fixture("an override reached through .. comes back normalized", CHILD_AND_ONE, function(msg)
