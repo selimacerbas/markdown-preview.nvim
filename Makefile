@@ -3,7 +3,7 @@
 STYLUA_VERSION := 2.5.2
 STYLUA := bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION)
 
-.PHONY: help test hooks fmt fmt-check lint-text lint-blame
+.PHONY: help test test-browser hooks fmt fmt-check lint-text lint-blame
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## / : /'
 
@@ -11,6 +11,11 @@ help: ## List targets
 # hide the second.
 test: ## Run every headless suite (tests/run.sh) and the commit-message policy test
 	@rc=0; bash tests/run.sh || rc=1; sh tests/message_policy_test.sh || rc=1; exit $$rc
+
+# Kept out of make test, which must run with no network and no browser.
+test-browser: ## Run the browser smoke test (network: Playwright's Chromium and the page's CDN libraries)
+	@command -v bun >/dev/null 2>&1 || { echo 'test-browser: bun runs the browser test and is not installed; install it from https://bun.sh' >&2; exit 1; }
+	cd tests/browser && bun install --frozen-lockfile && bun test
 
 # Copied, never core.hooksPath: a hooks path inside the tracked tree runs the
 # hooks a checked-out branch carries, a fork's post-checkout during the
