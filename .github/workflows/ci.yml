@@ -3,8 +3,8 @@ name: ci
 on:
   push:
     branches: [main]
-  # edited is listed because the title becomes the subject of a merge or
-  # squash commit, so a retitled pull request is judged again.
+  # edited is listed because the title becomes the squash commit's subject,
+  # so a retitled pull request is judged again.
   pull_request:
     types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
@@ -304,6 +304,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # The title becomes the squash commit's subject with " (#N)" appended,
+      # so it is at most 65 characters and carries no em dash.
       - name: Pull request title
         if: github.event_name == 'pull_request'
         env:
@@ -319,8 +321,8 @@ jobs:
               fail=1
               ;;
           esac
-          if [ "${#TITLE}" -gt 72 ]; then
-            printf '::error::the title is %s characters, over 72: %s\n' "${#TITLE}" "$TITLE"
+          if [ "${#TITLE}" -gt 65 ]; then
+            printf '::error::the title is %s characters, over 65: %s\n' "${#TITLE}" "$TITLE"
             fail=1
           fi
           exit "$fail"

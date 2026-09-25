@@ -22,7 +22,7 @@ The config is `.stylua.toml`. The one-time format commit is listed in `.git-blam
 
 ## Commits
 
-Plain imperative subject of at most 72 characters; the body, wrapped at 72 columns, says why. No attribution trailers: a commit names its author alone. No em dash character (U+2014) either; `make lint-text` refuses it in the files it checks. On a pull request CI refuses a commit that carries either, and a title that carries the character or runs over 72 characters, since the title becomes the subject of a merge or squash commit; on a push to main it reports them. To refuse both locally: `git config core.hooksPath .githooks`.
+Plain imperative subject of at most 72 characters; the body, wrapped at 72 columns, says why. No attribution trailers: a commit names its author alone. No em dash character (U+2014) either; `make lint-text` refuses it in the files it checks. On a pull request CI refuses a commit that carries either, and a title that breaks the title rule: the title becomes the squash commit's subject with ` (#N)` appended, so it is at most 65 characters and carries no em dash. On a push to main CI reports them. To refuse both locally: `git config core.hooksPath .githooks`.
 
 ## Releases (maintainer)
 

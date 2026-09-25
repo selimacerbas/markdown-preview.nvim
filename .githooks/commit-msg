@@ -11,9 +11,14 @@
 # lines are dropped first, as git's default cleanup after an editor does; a
 # comment line a -m message keeps is the CI job's to catch. A failed read
 # refuses.
-cc=$(git config core.commentChar) || cc='#'
-case $cc in '' | auto | ??*) cc='#' ;; esac
-raw=$(sed '/^. -\{24\} >8 -\{24\}$/,$d' "$1") || exit 1
+#
+# The comment string is git's: core.commentString (git 2.45 on) or
+# core.commentChar, else #; auto has no fixed value, so it reads as #.
+cc=$(git config core.commentString || git config core.commentChar || echo '#')
+case $cc in '' | auto) cc='#' ;; esac
+# Escaped, so the scissors pattern reads the comment string literally.
+esc=$(printf '%s\n' "$cc" | sed 's/[[\/.^$*]/\\&/g')
+raw=$(sed "/^$esc -\{24\} >8 -\{24\}\$/,\$d" "$1") || exit 1
 msg=$(printf '%s\n' "$raw" | CC=$cc awk 'index($0, ENVIRON["CC"]) != 1')
 dash=$(printf '\342\200\224')
 fail=0
