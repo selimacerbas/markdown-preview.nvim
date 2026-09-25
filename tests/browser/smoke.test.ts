@@ -3,8 +3,8 @@
 // the page the way a user's edit does, through the plugin's own autocmds and
 // its SSE push, with no explicit refresh. It needs network: the page loads
 // its libraries from jsDelivr and unpkg until they ship with the plugin. The
-// printed diagnosis is the record of a red run (no screenshot is kept); an
-// interrupted run skips afterAll and leaves Playwright's own profile behind.
+// printed diagnosis is the record of a red run (no screenshot is kept), and
+// an interrupted run (SIGINT) still leaves Playwright's own profile behind.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -73,7 +73,7 @@ async function pageState(): Promise<string> {
 
 async function diagnosis(): Promise<string> {
   return [
-    `neovim exit: ${nvim?.exitCode ?? "running"}, signal: ${nvim?.signalCode ?? "none"}`,
+    `neovim exit: ${!nvim ? "not started" : nvim.signalCode ? "none" : (nvim.exitCode ?? "running")}, signal: ${nvim?.signalCode ?? "none"}`,
     `neovim stdout: ${readText(outLog)}`,
     `neovim stderr: ${readText(errLog)}`,
     `page errors: ${JSON.stringify(pageErrors)}`,
@@ -107,8 +107,11 @@ async function waitForUrl(ms: number): Promise<string> {
     if (nvim!.exitCode !== null || nvim!.signalCode !== null) break;
     await Bun.sleep(200);
   }
-  const how = nvim!.signalCode !== null ? `killed by ${nvim!.signalCode}` : `exit ${nvim!.exitCode ?? "none, still running"}`;
-  throw new Error(`no preview URL from Neovim within ${ms} ms (${how})\n${await diagnosis()}`);
+  const how =
+    nvim!.signalCode !== null ? `killed by ${nvim!.signalCode}`
+    : nvim!.exitCode !== null ? `exited ${nvim!.exitCode}`
+    : `none within ${ms} ms`;
+  throw new Error(`no preview URL from Neovim: ${how}\n${await diagnosis()}`);
 }
 
 // The file each module was loaded from, so a copy on a start package or an
