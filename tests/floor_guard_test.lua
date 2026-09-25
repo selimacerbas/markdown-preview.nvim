@@ -166,6 +166,9 @@ H.eq(
 	'0 notices, commands "", setup returned',
 	"a config that opted out hears nothing below the floor, from the plugin file or the module"
 )
+-- The opted-out load's notices are read above; the next load counts its own.
+notices = {}
+refusals = {}
 package.loaded[MODULE] = nil
 vim.g.loaded_markdown_preview = nil
 source_err = source_plugin()
