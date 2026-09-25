@@ -386,13 +386,17 @@ end)
 
 -- A brace group with a comma makes building the search path raise E220
 -- here (measured), which the refusal names with live-server's reason. The
--- hosted Windows run read a brace in the checkout's own path literally, so
--- a directory that loads there is a counted skip, and any other outcome
--- stays red with the child's output.
+-- hosted Windows runner drops the entry instead, a glob that matches
+-- nothing, with no error (measured), so the proof finds no hit and the
+-- refusal names the reason: the same refusal, reached another way. A
+-- runtimepath that reads the brace literally loads the directory, a
+-- counted skip; any other outcome stays red with the child's output.
 fixture("a live-server directory with a brace group raises the search's own error", ONE, function(msg)
 	local braced = base .. "/d{a,b}"
 	stub(braced)
 	code, out = child(helpers_path, 'H.rtp()\nH.write_line("loaded=yes")\nH.ok(true, "loaded")\nH.finish()', braced)
+	local dropped = ("child_test.lua:2: live-server.nvim at %s does not resolve: nil "):format(H.canon(braced))
+		.. LS_REASON
 	if out:find("E220", 1, true) then
 		eq(
 			ruling(code, out, {
@@ -402,10 +406,16 @@ fixture("a live-server directory with a brace group raises the search's own erro
 			1,
 			msg
 		)
+	elseif out:find(dropped, 1, true) then
+		eq(
+			ruling(code, out, dropped),
+			1,
+			msg .. " (the runtimepath drops the entry here: the proof's refusal, no E220)"
+		)
 	elseif code == 0 and printed(out, "loaded") == "yes" then
 		H.skip(msg .. " (the runtimepath reads the brace literally here: the directory loaded without E220)")
 	else
-		eq(("exit %s without E220: %s"):format(code, vim.inspect(out)), 1, msg)
+		eq(("exit %s without E220 or the proof's refusal: %s"):format(code, vim.inspect(out)), 1, msg)
 	end
 end)
 
