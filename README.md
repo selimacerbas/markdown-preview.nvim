@@ -24,7 +24,8 @@ Live **Markdown preview** for Neovim with first-class **Mermaid diagram** suppor
 ```lua
 {
   "selimacerbas/markdown-preview.nvim",
-  -- a live-server.nvim checkout under another directory name needs name = "live-server.nvim" in its spec, so lazy.nvim merges it with this plugin's declaration instead of cloning upstream beside it
+  -- a live-server.nvim checkout under another dir name needs its spec to
+  -- say name = "live-server.nvim", or lazy.nvim clones upstream beside it
   dependencies = { "selimacerbas/live-server.nvim" },
   config = function()
     require("markdown_preview").setup({
