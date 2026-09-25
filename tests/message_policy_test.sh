@@ -101,6 +101,10 @@ judge 'make hooks refuses while core.hooksPath is set' "$?" 2 'core.hooksPath is
 git -C "$repo" config --unset core.hooksPath
 make -s -C "$repo" hooks >"$tmp/err" 2>&1
 judge 'make hooks installs the hook' "$?" 0 'hooks: installed'
+# git skips a hook that is not executable with only a hint line, which the
+# rows below filter out, so every row that wants a commit would pass unjudged.
+(cd "$repo" && test -x "$(git rev-parse --git-path hooks/commit-msg)") >"$tmp/err" 2>&1
+judge 'the installed hook is executable' "$?" 0
 # The branch name and a staged file's name and content carry the em dash,
 # so an editor session refuses a clean message unless its comment lines are
 # dropped and the diff is cut away.
@@ -128,10 +132,13 @@ com() {
     (cd "$repo" && GIT_EDITOR=true git commit -q "$@") >"$tmp/err.git" 2>&1
     got=$?
     [ "$got" = 0 ] || got=1
-    # Git's own warning and hint lines (git 2.51 deprecates commentChar=auto
-    # and says so on every commit) are not the hook's output.
+    # Git's own warning and hint lines (git 2.52 deprecates commentChar=auto
+    # and says so on every commit) are not the hook's output; a failed row
+    # shows them too, so a line the filter hid is not lost.
     grep -v -e '^warning: ' -e '^hint:' "$tmp/err.git" >"$tmp/err"
+    before=$failed
     judge "hook: $name" "$got" "$want" "$text"
+    [ "$failed" = "$before" ] || sed 's/^/    git| /' "$tmp/err.git"
 }
 # rec NAME HOOK RECORDED CONFIG... -- ARGS: com with HOOK as its want, then
 # the policy over the message git recorded (committed with --no-verify when
