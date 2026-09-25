@@ -833,6 +833,8 @@ local dotdot_cases = {
 	"creating that missing name leaves the path where it was",
 	"the same with a missing name after the link's .. reads as the kernel will",
 	"creating the first missing name leaves that path where it was too",
+	"a .. out of a missing name, then a link with no .. after it, reads as the kernel will",
+	"creating that missing name leaves the path through the link where it was",
 }
 if linked and uv.fs_stat(link) then
 	eq(H.canon(link), canon_p .. "/phys/t", link_cases[1])
@@ -848,8 +850,8 @@ if linked and uv.fs_stat(link) then
 		eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[3])
 		-- Fresh names: phys/later exists by now, and the second shape needs a
 		-- name after the link's .. that is still missing.
-		local climbs = { "/early/../links/t/../y", "/early/../links/t/../unmade/y" }
-		local before = { H.canon(p .. climbs[1]), H.canon(p .. climbs[2]) }
+		local climbs = { "/early/../links/t/../y", "/early/../links/t/../unmade/y", "/early/../links/t/y" }
+		local before = { H.canon(p .. climbs[1]), H.canon(p .. climbs[2]), H.canon(p .. climbs[3]) }
 		vim.fn.mkdir(p .. "/early", "p")
 		local kernel = uv.fs_realpath(p .. "/early/../links/t/..")
 		kernel = kernel and vim.fs.normalize(kernel, { expand_env = false }) or "(realpath failed)"
@@ -857,6 +859,10 @@ if linked and uv.fs_stat(link) then
 		eq(H.canon(p .. climbs[1]), kernel .. "/y", dotdot_cases[5])
 		eq(before[2], kernel .. "/unmade/y", dotdot_cases[6])
 		eq(H.canon(p .. climbs[2]), kernel .. "/unmade/y", dotdot_cases[7])
+		local through = uv.fs_realpath(p .. "/early/../links/t")
+		through = through and vim.fs.normalize(through, { expand_env = false }) or "(realpath failed)"
+		eq(before[3], through .. "/y", dotdot_cases[8])
+		eq(H.canon(p .. climbs[3]), through .. "/y", dotdot_cases[9])
 	end
 else
 	local why = " (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")"
