@@ -323,7 +323,7 @@ markdown-preview.nvim/
 ├─ assets/
 │  └─ index.html                     -- browser preview app
 ├─ lazy.lua                          -- the spec lazy.nvim reads: live-server.nvim as a dependency
-└─ tests/                            -- the headless suites, their harness and runner
+└─ tests/                            -- the headless suites, their harness and runner, and browser/ (the browser smoke test)
 ```
 
 ---
