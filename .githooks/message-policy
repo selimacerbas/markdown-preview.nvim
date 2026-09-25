@@ -57,7 +57,8 @@ for s in '[skip ci]' '[ci skip]' '[no ci]' '[skip actions]' '[actions skip]'; do
         what="$what${what:+, }$s on line $nums"
     fi
 done
-if found -i -E -e '^[[:blank:]]*skip-checks[[:blank:]]*:[[:blank:]]*true[[:blank:]]*$'; then
+# [[:space:]] takes the carriage return a body from GitHub's web UI ends in.
+if found -i -E -e '^[[:blank:]]*skip-checks[[:blank:]]*:[[:blank:]]*true[[:space:]]*$'; then
     what="$what${what:+, }a skip-checks trailer on line $nums"
 fi
 if [ -n "$what" ]; then

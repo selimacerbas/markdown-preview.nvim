@@ -68,6 +68,8 @@ pol 'a skip instruction in mixed case' 1 'skip instruction ([skip ci] on line 3)
 pol 'the trailer skip-checks: true' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\n\nskip-checks: true')"
 pol 'the trailer skip-checks:true' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\n\nskip-checks:true')"
 pol 'the trailer in mixed case' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\n\n  Skip-Checks : TRUE ')"
+pol 'a skip-checks trailer ending in CRLF' 1 'skip-checks trailer on line 3' "$(printf 'Fix it\r\n\r\nskip-checks: true\r')"
+pol 'an attribution trailer ending in CRLF' 1 'attribution trailer on line 3 (Co-authored-by)' "$(printf 'Fix it\r\n\r\nCo-authored-by: A\r')"
 pol 'skip-checks: false skips nothing' 0 '' "$(printf 'Fix it\n\nskip-checks: false')"
 pol 'a message that is only a subject' 0 '' 'Fix the reload race'
 printf 'Fix it %s\n' "$dash" | "$policy" - 2>"$tmp/err"
