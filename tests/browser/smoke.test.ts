@@ -212,7 +212,12 @@ afterAll(async () => {
         await Promise.race([nvim.exited, Bun.sleep(3_000)]);
       }
     }
-    if (work) rmSync(work, { recursive: true, force: true });
+    // A Neovim that outlived SIGKILL may still hold the directory, and an
+    // error from its removal would be the one this hook reports, hiding a
+    // browser.close() failure: the directory stays, and the run says so.
+    if (nvim && nvim.exitCode === null && nvim.signalCode === null) {
+      console.error(`neovim still running after SIGKILL; ${work} is left in place`);
+    } else if (work) rmSync(work, { recursive: true, force: true });
   }
 }, 30_000);
 
