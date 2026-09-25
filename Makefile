@@ -25,11 +25,11 @@ fmt-check: ## Fail when a tracked Lua file is not formatted (the CI format job r
 # (dash on Ubuntu, which reads $'...' as literal text) and this file must not
 # carry it. git grep searches the tracked files and keeps "none found" (1)
 # apart from a failure (2 and up), which a grep under xargs folds together.
-# README.md, CLAUDE.md and doc/ are the docs sweep's; drop them from the
-# exclusion when it lands.
+# README.md and doc/ are the docs sweep's; drop them from the exclusion when
+# it lands.
 lint-text: ## Refuse the em dash character in code, product copy and configuration
 	@dash=$$(printf '\342\200\224'); \
-	git grep -l -F -e "$$dash" -- . ':!README.md' ':!CLAUDE.md' ':!doc/'; rc=$$?; \
+	git grep -l -F -e "$$dash" -- . ':!README.md' ':!doc/'; rc=$$?; \
 	if [ $$rc -eq 0 ]; then echo 'lint-text: the files above carry the em dash character' >&2; exit 1; fi; \
 	if [ $$rc -ne 1 ]; then echo "lint-text: git grep failed (exit $$rc)" >&2; exit 1; fi
 
