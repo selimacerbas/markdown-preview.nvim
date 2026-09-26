@@ -706,14 +706,29 @@ function M.start()
 			)
 			return
 		end
+		-- The lock names the port the server got, so it is written once the
+		-- server listens. A lock that cannot be made private stops the server
+		-- again and fails the start as a busy port does: a primary without
+		-- its lock left a listening server, a raw Lua error and no browser.
+		if M.config.instance_mode == "takeover" then
+			local lock = require("markdown_preview.lock")
+			local locked, lock_err = pcall(lock.write, inst.port, dir, M._token)
+			if not locked then
+				pcall(ls_server.stop, inst)
+				lock.remove()
+				vim.notify(
+					("Markdown Preview: failed to start server (port %s): %s"):format(
+						tostring(inst.port),
+						tostring(lock_err)
+					),
+					vim.log.levels.ERROR
+				)
+				return
+			end
+		end
 		M._server_instance = inst
 		M._is_primary = true
 		M._takeover_port = nil
-
-		-- Write lock file in takeover mode
-		if M.config.instance_mode == "takeover" then
-			require("markdown_preview.lock").write(inst.port, dir, M._token)
-		end
 
 		if type(M.config.hooks.on_start) == "function" then
 			M.config.hooks.on_start(browser_url(inst.port))
