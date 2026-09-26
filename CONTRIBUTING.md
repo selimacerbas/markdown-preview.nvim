@@ -42,6 +42,8 @@ Install the hook with `make hooks`, which copies it and `.githooks/message-polic
 
 When the `commits` job is red on your pull request, reword the commit (`git commit --amend` for the last one, `git rebase -i` for an earlier one) or edit the title or the body, then force-push the branch. A red report on main is a record and is left alone; the next push judges only its own range. Accepting a review suggestion in GitHub's web UI adds a `Co-authored-by` line for the suggester, so apply suggestions locally instead.
 
+A pull request Dependabot opens is machine-authored, keyed on the pull request's author as GitHub sets it: the `commits` job accepts Dependabot's own `Signed-off-by` line on its commits and does not judge its body, release notes that may break the policy, while the title is judged as any other. Merging one keeps the title (edited down when it runs over 65 characters) and replaces the squash commit's body with one line, because that body lands on main, where the push arm judges it.
+
 ## Releases (maintainer)
 
 1. Move the `Unreleased` section of `CHANGELOG.md` under the new version and date, add the version's link definition under `[Unreleased]`'s (newest first), and start the `[Unreleased]` compare link at the new tag.

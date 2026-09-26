@@ -248,7 +248,11 @@ jobs:
   # The pull request arm judges a contributor's commits, title and body before
   # they land; the push arm reports what already landed on main, a direct push
   # and the merge or squash commit GitHub composes included. A push range it
-  # cannot read is noticed, never judged.
+  # cannot read is noticed, never judged. A pull request GitHub's Dependabot
+  # opened (keyed on the login GitHub sets, never on a commit's author name,
+  # which anyone can write) is machine-authored: its sign-off line is
+  # accepted on its commits and its body, release notes, is not judged; the
+  # maintainer replaces that body when merging (CONTRIBUTING.md).
   commits:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -266,6 +270,7 @@ jobs:
         env:
           TITLE: ${{ github.event.pull_request.title }}
           BODY: ${{ github.event.pull_request.body }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
           # ${#TITLE} counts characters, not bytes, only under a UTF-8 locale.
           LC_ALL: C.UTF-8
         run: |
@@ -274,6 +279,10 @@ jobs:
           if [ "${#TITLE}" -gt 65 ]; then
             printf '::error::the title is %s characters, over 65: %s\n' "${#TITLE}" "$TITLE"
             fail=1
+          fi
+          if [ "$AUTHOR" = 'dependabot[bot]' ]; then
+            echo "::notice::a Dependabot pull request: the title is judged, the body is not"
+            BODY=
           fi
           if out=$(printf '%s\n\n%s\n' "$TITLE" "$BODY" | .githooks/message-policy - 2>&1); then
             rc=0
@@ -298,8 +307,16 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
+          # An empty sed script passes every line; Dependabot's one drops
+          # its own sign-off line, exactly as it writes it, and nothing else.
+          drop=
+          if [ "$AUTHOR" = 'dependabot[bot]' ]; then
+            echo "::notice::a Dependabot pull request: its sign-off line is accepted on each commit"
+            drop='/^Signed-off-by: dependabot\[bot\] <support@github\.com>$/d'
+          fi
           if [ "$EVENT" = pull_request ]; then
             # The test merge's first parent is the base GitHub merged into;
             # pull_request.base.sha goes stale once the branch merges main.
@@ -338,7 +355,7 @@ jobs:
           shas=$(git rev-list --reverse "$range")
           fail=0
           for sha in $shas; do
-            if out=$(git show -s --format=%B "$sha" | .githooks/message-policy - 2>&1); then
+            if out=$(git show -s --format=%B "$sha" | sed "$drop" | .githooks/message-policy - 2>&1); then
               continue
             else
               rc=$?
