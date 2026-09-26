@@ -63,14 +63,14 @@ A pull request Dependabot opens is machine-authored, keyed on the pull request's
 
 ### Moving a floor
 
-Two floors are stated here, and a change that moves one edits every place that states it, together (`git grep -n '0\.10'` and `git grep -n 'v1\.5\.0'` find them, beside harness comments that name a version they were measured on).
+Two floors are stated here, and a change that moves one edits every place that states it, together (`git grep -n '0\.10'` and `git grep -n 'v1\.5\.0'` find them, beside what states no floor: harness comments that name a version they were measured on, and the CHANGELOG's release links and past release notes).
 
 The Neovim floor:
 
 - `lua/markdown_preview/floor.lua`: the check and the message, which the plugin file, the module and the smoke read;
-- `plugin/markdown-preview.lua`: the refusers' description, and the module's header comment in `lua/markdown_preview/init.lua`;
+- `plugin/markdown-preview.lua`: the header comment and the refusers' description, and the module's header comment in `lua/markdown_preview/init.lua`;
 - the README's requirements line and a CHANGELOG entry; AGENTS.md's Conventions, its `floor_guard_test` line under Tests and its CI line; this file's prerequisites and job list;
-- `.github/workflows/ci.yml`: the `floor` job's version and name, `floor-below`'s version and name (the newest release below the floor), the comments above both and the comments of the markdown parser step;
+- `.github/workflows/ci.yml`: the `floor` job's version and name, `floor-below`'s version and name (the newest release below the floor), the comments above both, the `floor` job's comment on the minimal install and the comments of the markdown parser step;
 - `tests/floor_guard_test.lua`, which pins the text, and the comments of `tests/floor_smoke.sh`.
 
 The live-server floor:
