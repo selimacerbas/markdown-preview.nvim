@@ -14,6 +14,11 @@ src=$PWD
 policy=$src/.githooks/message-policy
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
+# dash ends on HUP, INT or TERM without the EXIT trap (measured), so each
+# signal cleans up and is raised again, and the caller stops at once too.
+trap 'rm -rf "$tmp"; trap - HUP; kill -HUP $$' HUP
+trap 'rm -rf "$tmp"; trap - INT; kill -INT $$' INT
+trap 'rm -rf "$tmp"; trap - TERM; kill -TERM $$' TERM
 # The developer's own git configuration must not reach the scratch commits.
 GIT_CONFIG_GLOBAL=/dev/null
 GIT_CONFIG_NOSYSTEM=1

@@ -40,6 +40,11 @@ rtp=$PWD
 [ -d live-server-rtp ] && rtp="$rtp,$PWD/live-server-rtp"
 run=$(mktemp -d) || exit 1
 trap 'rm -rf "$run"' EXIT
+# dash ends on HUP, INT or TERM without the EXIT trap (measured), so each
+# signal cleans up and is raised again, and the caller stops at once too.
+trap 'rm -rf "$run"; trap - HUP; kill -HUP $$' HUP
+trap 'rm -rf "$run"; trap - INT; kill -INT $$' INT
+trap 'rm -rf "$run"; trap - TERM; kill -TERM $$' TERM
 cat >"$run/check.lua" <<'LUA'
 local module = os.getenv("SMOKE_MODULE")
 local fails = 0
