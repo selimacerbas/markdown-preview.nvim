@@ -13,11 +13,22 @@ test: ## Run every headless suite and, when doc/ exists, the help-tags check (te
 	@rc=0; sh tests/run.sh || rc=1; sh tests/message_policy_test.sh || rc=1; exit $$rc
 
 # Kept out of make test, which must run with no network and no browser.
-# The Makefile is shared, so a repository with no browser test says so.
+# The Makefile is shared, so a repository with no browser test says so. It
+# is the gate's definition, which the CI browser job runs: without the lock
+# --frozen-lockfile resolves from the registry, and bun exits 0 when every
+# test is skipped, so the JUnit report's counts rule (one test, none
+# failed, none skipped).
 test-browser: ## Run the browser smoke test (network: Playwright's Chromium and the page's CDN libraries)
 	@test -d tests/browser || { echo 'test-browser: this repository has no browser test (tests/browser)' >&2; exit 2; }
 	@command -v bun >/dev/null 2>&1 || { echo 'test-browser: bun runs the browser test and is not installed; install it from https://bun.sh' >&2; exit 1; }
-	cd tests/browser && bun install --frozen-lockfile && bun test
+	@test -f tests/browser/bun.lock || { echo 'test-browser: tests/browser/bun.lock is missing' >&2; exit 1; }
+	cd tests/browser && bun install --frozen-lockfile
+	@out=$$(mktemp -d) || exit 1; trap 'rm -rf "$$out"' EXIT; \
+	(cd tests/browser && bun test --reporter=junit --reporter-outfile="$$out/smoke.xml") || exit 1; \
+	line=$$(grep '<testsuites ' "$$out/smoke.xml") || { echo 'test-browser: the JUnit report has no testsuites line' >&2; exit 1; }; \
+	for want in 'tests="1"' 'failures="0"' 'skipped="0"'; do \
+		case $$line in *" $$want "*) ;; *) echo "test-browser: the smoke test report does not read $$want: $$line" >&2; exit 1 ;; esac; \
+	done; echo "test-browser: $$line"
 
 # Copied, never core.hooksPath: a hooks path inside the tracked tree runs the
 # hooks a checked-out branch carries, a fork's post-checkout during the

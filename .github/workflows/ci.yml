@@ -411,29 +411,20 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
           token: ""
-      # Without the lock, --frozen-lockfile resolves from the registry.
-      - name: Install
+      # Without the lock, --frozen-lockfile resolves from the registry, and
+      # the Chromium install runs after it so bun x resolves the pinned
+      # Playwright, not npm's latest. The headless test launches the
+      # headless shell only.
+      - name: Install and Chromium
         working-directory: tests/browser
         run: |
           test -f bun.lock || { echo "::error::tests/browser/bun.lock is missing"; exit 1; }
           bun install --frozen-lockfile
-      # The headless test launches the headless shell only.
-      - name: Chromium
-        working-directory: tests/browser
-        run: bun x playwright install --with-deps --only-shell chromium
-      # bun exits 0 when every test is skipped, so the JUnit report's counts
-      # rule: one test, none failed, none skipped.
+          bun x playwright install --with-deps --only-shell chromium
+      # The target is the gate's definition, a local run's too: it reads the
+      # JUnit report's counts, since bun exits 0 when every test is skipped.
       - name: Smoke test
-        working-directory: tests/browser
-        run: |
-          bun test --reporter=junit --reporter-outfile="$RUNNER_TEMP/smoke.xml"
-          line=$(grep '<testsuites ' "$RUNNER_TEMP/smoke.xml")
-          for want in 'tests="1"' 'failures="0"' 'skipped="0"'; do
-            case $line in
-              *" $want "*) ;;
-              *) echo "::error::the smoke test report does not read $want: $line"; exit 1 ;;
-            esac
-          done
+        run: make test-browser
 
   # The one status check branch protection requires, strict, on both
   # repositories. Its context is this job's id, so renaming the job or giving

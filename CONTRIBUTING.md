@@ -2,7 +2,7 @@
 
 Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text` and `make lint-blame` run here as they run in CI, and the gating `browser` job runs locally as `make test-browser`. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, or a binary from <https://github.com/rhysd/actionlint/releases>). The `floor` (Neovim 0.10.0), `floor-below` (Neovim 0.9.5), `windows`, `upstream` (live-server.nvim `main`) and `commits` jobs run only in CI; the commit-msg hook below runs the `commits` job's policy locally.
 
-You need Neovim 0.10 or newer, a live-server.nvim checkout (found as below), curl for the three suites that make HTTP requests, bun for the formatter and the browser test, and Playwright's headless Chromium for the browser test (`cd tests/browser && bun x playwright install --only-shell chromium`).
+You need Neovim 0.10 or newer, a live-server.nvim checkout (found as below), curl for the three suites that make HTTP requests, bun for the formatter and the browser test, and Playwright's headless Chromium for the browser test (`cd tests/browser && bun install --frozen-lockfile && bun x playwright install --only-shell chromium`: the install first, so `bun x` runs the pinned Playwright and not npm's latest). The browser test's lockfile needs bun 1.4.0 or newer.
 
 ## Run the tests
 
@@ -18,7 +18,7 @@ runs every suite through `tests/run.sh`, the same loop CI runs, and then `tests/
 
     make test-browser
 
-runs `tests/browser/smoke.test.ts`: a headless Neovim serves a buffer, Playwright's headless Chromium renders the page, and an edit reaches it over SSE. It needs network, since the page loads its libraries from jsDelivr and unpkg; a red run prints Neovim's output and exit, the page's errors and console warnings, pending and failed requests, 4xx and 5xx responses and the page's state.
+runs `tests/browser/smoke.test.ts`: a headless Neovim serves a buffer, Playwright's headless Chromium renders the page, and an edit reaches it over SSE. The target is the gate's definition, and the CI `browser` job runs it: it installs from `bun.lock`, and it reads the JUnit report, so a skipped test is red locally as in CI. It needs network, since the page loads its libraries from jsDelivr and unpkg; a red run prints Neovim's output and exit, the page's errors and console warnings, pending and failed requests, 4xx and 5xx responses and the page's state. A browser job that goes red after a third-party release, with no change here, is re-run once; if it stays red, the diagnosis names the URL (shipping the page's libraries with the plugin is later work).
 
 ## Shared files
 
