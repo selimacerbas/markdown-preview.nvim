@@ -224,14 +224,11 @@ jobs:
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
         with:
           args: -color
-      # The same image by the same digest carries the shellcheck actionlint's
-      # own checks run (0.11.0, measured), so the scripts are read by one
-      # pinned binary; the digest moves with the one above.
-      - name: shellcheck
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
-        with:
-          entrypoint: sh
-          args: -c "shellcheck -s sh tests/*.sh .githooks/commit-msg .githooks/message-policy"
+      # The target holds the list of scripts; the binary is the shellcheck
+      # the actionlint image carries (0.11.0, measured), run by the same
+      # digest, which moves with the one above.
+      - name: make shellcheck
+        run: make shellcheck SHELLCHECK="docker run --rm -v $GITHUB_WORKSPACE:/w:ro -w /w --entrypoint shellcheck rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667"
       # actionlint reads a composite action's call, never its steps, so a step
       # made conditional (an if: on an input no caller passes) or allowed to
       # fail would silence the floor check of five gating jobs.

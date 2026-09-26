@@ -3,7 +3,7 @@
 STYLUA_VERSION := 2.5.2
 STYLUA := bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION)
 
-.PHONY: help test test-browser hooks parity fmt fmt-check lint-text lint-blame
+.PHONY: help test test-browser hooks parity fmt fmt-check lint-text lint-blame shellcheck
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## / : /'
 
@@ -75,6 +75,14 @@ lint-text: ## Refuse the em dash character in code, product copy and configurati
 	git grep -l -F -e "$$dash" -- . ':!README.md' ':!doc/'; rc=$$?; \
 	if [ $$rc -eq 0 ]; then echo 'lint-text: the files above carry the em dash character' >&2; exit 1; fi; \
 	if [ $$rc -ne 1 ]; then echo "lint-text: git grep failed (exit $$rc)" >&2; exit 1; fi
+
+# The one list of the POSIX scripts, read as sh: a bashism passes bash and
+# fails dash, Ubuntu's sh. SHELLCHECK names the binary, so the CI
+# lint-workflows job runs this target with the pinned actionlint image's.
+SHELLCHECK := shellcheck
+shellcheck: ## Refuse a bashism in the hooks and the test scripts
+	@command -v $(firstword $(SHELLCHECK)) >/dev/null 2>&1 || { echo 'shellcheck: $(firstword $(SHELLCHECK)) is not installed; install shellcheck (brew install shellcheck, or apt install shellcheck)' >&2; exit 1; }
+	$(SHELLCHECK) -s sh .githooks/commit-msg .githooks/message-policy tests/*.sh
 
 # git blame skips an entry that names no commit without a word, so a rebase
 # that rewrote the format commit would leave the file ignoring nothing. Each
