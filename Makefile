@@ -9,7 +9,7 @@ help: ## List targets
 
 # Both lanes run and their exits accumulate, so a red first lane does not
 # hide the second.
-test: ## Run every headless suite (tests/run.sh) and the commit-message policy test
+test: ## Run every headless suite and, when doc/ exists, the help-tags check (tests/run.sh), then the commit-message policy test
 	@rc=0; sh tests/run.sh || rc=1; sh tests/message_policy_test.sh || rc=1; exit $$rc
 
 # Kept out of make test, which must run with no network and no browser.
