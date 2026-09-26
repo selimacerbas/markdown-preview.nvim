@@ -136,8 +136,8 @@ H.section("Section 3: the exit code is the ruling")
 -- (otherwise stdout is read before stderr); a merged case skips, counted,
 -- where no sh is on PATH (the hosted Windows runner has Git's). The first
 -- hosted run's log reads as a Windows child ending its lines in \r\n, which
--- a pattern naming \n misses (the next Windows run is the measurement), so
--- the output is read with every line end folded to \n, once, here. A case
+-- a pattern naming \n misses, so the output is read with every line end
+-- folded to \n, once, here (the hosted Windows runs since pass with it). A case
 -- that fails names the pattern it missed and the child's output, each on
 -- one line (vim.inspect escapes the newlines %q would write), so a Results
 -- line inside either never starts a line of this suite's own log, where the
@@ -930,7 +930,7 @@ end
 -- realpath's answer, not the walk's: macOS's refuses it with ENAMETOOLONG
 -- (measured), which the walk up must raise rather than climb to a prefix
 -- short enough to resolve; glibc's allocates its own buffer and resolves it
--- (read from its source; the ubuntu job is the measurement), which H.canon
+-- (measured on the hosted ubuntu runs), which H.canon
 -- must then answer with. The row asks the platform first and pins that
 -- answer; any other answer stays red, quoted. The spelling climbs back to
 -- phys, so a resolution is pinned to phys's own name as well: H.canon's

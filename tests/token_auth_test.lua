@@ -111,7 +111,7 @@ ok(mp._server_instance == nil, "_server_instance cleared after stop")
 -- status of 0 alone passed (measured). Give the close a moment. The first
 -- hosted Windows run read 28 here, taken as its two-second retry of a
 -- refused loopback connect, which H.http_get's connect bound now waits out;
--- the next Windows run is the measurement of 7 there.
+-- the hosted Windows runs since read 7 there (measured).
 vim.wait(200, function()
 	return false
 end)

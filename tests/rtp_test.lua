@@ -178,22 +178,22 @@ end
 H.section("Section 1: a lookup that cannot be proven raises")
 local code, out = child(helpers_path, "H.rtp()", "/nonexistent")
 eq(
-	ruling(code, out, "LIVE_SERVER_RTP is set but is not a directory: /nonexistent"),
+	ruling(code, out, "child_test.lua:2: LIVE_SERVER_RTP is set but is not a directory: /nonexistent"),
 	1,
-	"an override that is not a directory raises"
+	"an override that is not a directory raises at the suite's line"
 )
 
 -- H.root follows the helper's own path, so a copy of it in a tree with no
 -- ./live-server-rtp and no sibling clone finds nothing; the message names
 -- where to clone from, the floor and both paths, canonical.
-fixture("no candidate on any lookup path raises, naming the clone, the floor and both paths", ONE, function(msg)
+fixture("no candidate on any lookup path raises at the suite's line, naming the clone, the floor and both paths", ONE, function(msg)
 	local bare = base .. "/bare/mp"
 	code, out = child(tree(bare), "H.rtp()", "")
 	eq(
 		ruling(
 			code,
 			out,
-			("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (%s or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
+			("child_test.lua:2: live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (%s or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
 				H.live_server_floor,
 				H.canon(bare),
 				H.canon(base .. "/bare")
@@ -308,7 +308,7 @@ end)
 -- The live-server directory goes before the checkout on the runtimepath, so
 -- one that also carries this plugin's modules answered require while every
 -- proof passed (measured); the root is proven again after the prepend.
-fixture("a live-server directory that carries this plugin's modules raises, naming them", ONE, function(msg)
+fixture("a live-server directory that carries this plugin's modules raises at the suite's line, naming them", ONE, function(msg)
 	local dep = base .. "/dep"
 	stub(dep)
 	vim.fn.mkdir(dep .. "/lua/markdown_preview", "p")
@@ -318,7 +318,7 @@ fixture("a live-server directory that carries this plugin's modules raises, nami
 		ruling(
 			code,
 			out,
-			("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua (live-server.nvim at %s carries this plugin's modules too)"):format(
+			("child_test.lua:2: the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua (live-server.nvim at %s carries this plugin's modules too)"):format(
 				H.root,
 				H.canon(dep),
 				H.canon(dep)

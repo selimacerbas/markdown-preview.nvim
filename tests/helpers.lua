@@ -50,8 +50,8 @@ end
 -- compare as some other file: a file that exists and cannot be resolved (a
 -- symlink loop, a refused search), or a name the platform's realpath calls
 -- too long (ENAMETOOLONG). That errno is the platform's, not this walk's:
--- macOS's realpath refuses a spelling over PATH_MAX (measured), glibc's
--- resolves one (read from its source); a component over NAME_MAX cannot
+-- macOS's realpath refuses a spelling over PATH_MAX, glibc's resolves one
+-- (both measured on the hosted runners); a component over NAME_MAX cannot
 -- exist, and past a missing directory it is looked up as a missing name, so
 -- it reads as a path until that directory is made.
 local function realpath(name)
@@ -424,8 +424,8 @@ end
 -- hosted Windows run read a refused port as a timeout (curl 28) under a
 -- connect bound of 2, which fits Windows retrying a refused loopback connect
 -- for about two seconds before it reports it; the bound now sits above that
--- window and below --max-time, so refused should read curl 7 there too (the
--- next Windows run is the measurement).
+-- window and below --max-time, and the hosted Windows runs since read a
+-- refused port as curl 7 (measured).
 function H.http_get(url, headers)
 	local cmd = {
 		"curl",
