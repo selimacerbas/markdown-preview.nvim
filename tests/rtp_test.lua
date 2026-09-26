@@ -10,7 +10,7 @@
 -- an 8.3 name or a backslash on Windows, or /var against /private/var on
 -- macOS, never reads as a different file.
 --
--- Run: nvim --headless -u NONE -l tests/rtp_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/rtp_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()

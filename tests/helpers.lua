@@ -266,7 +266,7 @@ end
 local RTP_SYNTAX =
 	"a name the runtimepath reads differently (a comma, a dollar sign, a glob character, a backslash, a brace, or a name ending in after)"
 
--- parity: own lines begin (tests/parity.sh compares the rest with the sibling's copy)
+-- parity: own lines begin (tests/parity.sh compares the rest with the sibling)
 -- The live-server floor this plugin's release notes promise, written once:
 -- the not-found message and the suites read it here, and CI's floor step
 -- checks this line against the workflow's LIVE_SERVER_FLOOR.
@@ -628,8 +628,9 @@ end
 -- does one whose callbacks raised, and one whose skips exceed a quarter of
 -- its passes: a leg that turns rows into skips must not stay green, and the
 -- worst ratio measured is 16 skips to 91 passes (the hosted Windows
--- helpers_test) and 2 to 9 (host_binding behind a Mac's firewall). The Results line a runner greps for
--- follows the banner, a line of the helper's own, so it always starts a line.
+-- helpers_test) and 2 to 9 (host_binding behind a Mac's firewall). The
+-- Results line a runner greps for follows the banner, a line of the
+-- helper's own, so it always starts a line.
 -- cq ends the run through Neovim's own teardown; where Ex commands are refused
 -- (textlock, an expr mapping: E565) it raised and the run went on to exit 0
 -- (measured), so a cq that raises or returns falls through to the real exit.

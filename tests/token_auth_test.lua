@@ -4,7 +4,7 @@
 -- private. The suite drives require("markdown_preview").start() directly, not
 -- the :MarkdownPreview user command.
 --
--- Run: nvim --headless -u NONE -l tests/token_auth_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/token_auth_test.lua"
 -- live-server.nvim is found by tests/helpers.lua ($LIVE_SERVER_RTP,
 -- ./live-server-rtp, the checkout's sibling live-server.nvim).
 

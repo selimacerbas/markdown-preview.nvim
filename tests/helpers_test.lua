@@ -4,7 +4,7 @@
 -- (3), an error a callback raises failing the suite (4), H.expect_error (5),
 -- H.rtp's proof of the copy require loads (6) and one spelling per path (7).
 --
--- Run: nvim --headless -u NONE -l tests/helpers_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/helpers_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 local xdg = H.isolate()

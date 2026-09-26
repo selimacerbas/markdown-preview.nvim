@@ -5,7 +5,7 @@
 -- plugin's asset_root sidecar, which names the document's directory, stays
 -- behind the token.
 --
--- Run: nvim --headless -u NONE -l tests/asset_route_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/asset_route_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()
