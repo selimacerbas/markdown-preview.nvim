@@ -72,8 +72,8 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 
 ## CI
 
-- `.github/workflows/ci.yml`: `test` (Linux and macOS, Neovim stable), `floor` (Neovim 0.10.0) and `floor-below` (Neovim 0.9.5) on the live-server floor; `lint-workflows`, `format`, `commits` and `browser` (Linux, Neovim stable, Playwright's headless Chromium, the live-server floor); `ci-ok` passes only when each of those passed; `commits` runs on every event, and a manual run judges the commit it runs on alone.
-- Reporting jobs: `upstream` (live-server `main`) and `windows`; `.github/workflows/nightly.yml` runs Neovim nightly against live-server `main` weekly and by hand. None of them is in `ci-ok`.
+- `.github/workflows/ci.yml`: `test` (Linux and macOS, Neovim stable), `floor` (Neovim 0.10.0), `floor-below` (Neovim 0.9.5) and `windows` (Neovim stable) on the live-server floor; `lint-workflows`, `format`, `commits` and `browser` (Linux, Neovim stable, Playwright's headless Chromium, the live-server floor); `ci-ok` passes only when each of those passed; `commits` runs on every event, and a manual run judges the commit it runs on alone.
+- Reporting jobs: `upstream` (live-server `main`); `.github/workflows/nightly.yml` runs Neovim nightly against live-server `main` weekly and by hand. Neither is in `ci-ok`.
 
 ## Testing by hand
 

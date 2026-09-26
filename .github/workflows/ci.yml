@@ -174,17 +174,13 @@ jobs:
       - name: Headless tests
         run: bash tests/run.sh
 
-  # Measures the suites on Windows; the token fallback (no /dev/urandom) has
-  # no assertion of its own yet. It reports, and joins ci-ok once it has been
-  # green. It runs against the live-server floor, as the gating jobs do, so
-  # that once it joins them it gates on the floor and not on live-server main.
+  # The suites on Windows, gating as the other test jobs do and on the
+  # live-server floor as they are; it joined ci-ok after three green hosted
+  # runs. The token fallback (no /dev/urandom) has no assertion of its own.
   windows:
     name: windows (nvim stable, live-server floor)
     runs-on: windows-latest
     timeout-minutes: 15
-    # On push and pull_request runs the conclusion follows ci-ok; a red here
-    # is read from this job's own conclusion and never blocks a merge.
-    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -436,7 +432,7 @@ jobs:
   # run of a pull request's head posts no green ci-ok that judged no commit.
   ci-ok:
     if: always()
-    needs: [test, floor, floor-below, lint-workflows, format, commits, browser]
+    needs: [test, floor, floor-below, windows, lint-workflows, format, commits, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -446,11 +442,12 @@ jobs:
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
           FLOOR_BELOW: ${{ needs.floor-below.result }}
+          WINDOWS: ${{ needs.windows.result }}
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
           COMMITS: ${{ needs.commits.result }}
           BROWSER: ${{ needs.browser.result }}
         run: |
-          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS browser=$BROWSER"
+          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW windows=$WINDOWS lint-workflows=$LINT format=$FORMAT commits=$COMMITS browser=$BROWSER"
           [ "$COMMITS" = success ] || exit 1
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] && [ "$BROWSER" = success ] || exit 1
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$WINDOWS" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] && [ "$BROWSER" = success ] || exit 1
