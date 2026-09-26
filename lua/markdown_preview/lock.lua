@@ -52,7 +52,8 @@ function M.write(port, workspace, token)
 	local private, chmod_err = uv.fs_fchmod(fd, 384)
 	if not private then
 		uv.fs_close(fd)
-		error("markdown-preview.nvim: cannot make the lockfile private: " .. tostring(chmod_err))
+		-- Level 0: the start-failure notice shows the message, with no position.
+		error("cannot make the lock file private: " .. tostring(chmod_err), 0)
 	end
 	assert(uv.fs_write(fd, json, 0))
 	assert(uv.fs_close(fd))

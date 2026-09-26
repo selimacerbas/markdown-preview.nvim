@@ -23,7 +23,9 @@ vim.cmd("edit " .. vim.fn.fnameescape(mdfile))
 vim.bo.filetype = "markdown"
 
 local mp = require("markdown_preview")
--- multi mode so the suite never touches the takeover lock or the shared port
+-- Sections 0 to 2 run multi mode, a server on an OS-assigned port; the lock
+-- sections (3 to 5) write it or start takeover themselves, on a free port,
+-- never the shared 8421.
 mp.setup({
 	open_browser = false,
 	instance_mode = "multi",
@@ -236,10 +238,13 @@ uv.fs_fchmod = function()
 end
 mp.setup({ open_browser = false, instance_mode = "takeover", port = fport })
 local raised, raise_err
-local notified = H.expect_error("failed to start server (port " .. fport .. ")", function()
-	local done, err = pcall(mp.start)
-	raised, raise_err = not done, err
-end)
+local notified = H.expect_error(
+	"failed to start server (port " .. fport .. "): cannot make the lock file private",
+	function()
+		local done, err = pcall(mp.start)
+		raised, raise_err = not done, err
+	end
+)
 uv.fs_fchmod = real_fchmod
 eq(raised and ("raised: " .. tostring(raise_err)) or "returned", "returned", "start() returns instead of raising")
 ok(notified, "the start-failure notification names the port and the reason")
