@@ -1,14 +1,26 @@
 #!/bin/sh
-# Runs .githooks/message-policy, the rules the CI commits job judges,
-# on the message git will record. make hooks copies this file into the
-# clone's hooks directory; the policy is read from the working tree.
+# Runs message-policy, the rules the CI commits job judges, on the message
+# git will record. make hooks copies this file and .githooks/message-policy
+# into the clone's hooks directory, and this hook runs that copy, never the
+# working tree's: git runs commit-msg for a merge with the merged tree
+# checked out, so the tree's script would be a branch nobody has read yet
+# (measured). make hooks refreshes the copy after a policy change; the CI
+# job judges the recorded message either way.
 #
 # Git hands this hook the raw file, before its own cleanup, so the cleanup
 # is reproduced by reading the file, and a file shaped like an editor
 # session (git's scissors line, or a line that is the comment string alone)
 # is cleaned like one. The CI job judges what git recorded, so a local pass
 # is never the last word. commit.cleanup picks the mode as git documents
-# it; a --cleanup= on the command line never reaches this hook.
+# it; a --cleanup= on the command line never reaches this hook. Three
+# corners pass here and the CI job refuses them: a -F message with a line
+# that is the comment string alone (its comment lines dropped here, kept by
+# git), a literal scissors line followed by a comment line (cut here, kept
+# by git), and an em dash written under a non-UTF-8 i18n.commitEncoding
+# (0x97 under windows-1252, which the byte match misses). The skip
+# instructions are judged on the text with its comment lines kept, since a
+# kept one leaves its push with no CI run: an editor session whose status
+# lines carry one is refused, never passed.
 #
 # The comment string is the value git reads last of core.commentString and
 # core.commentChar, else #. Under auto git picks, when the editor runs, the
@@ -19,10 +31,9 @@
 LC_ALL=C
 export LC_ALL
 
-top=$(git rev-parse --show-toplevel) || exit 2
-policy=$top/.githooks/message-policy
+policy=$(dirname "$0")/message-policy
 if [ ! -f "$policy" ]; then
-    echo "commit-msg: $policy is missing (a checkout older than it); commit with git commit --no-verify on such a checkout" >&2
+    echo "commit-msg: $policy is missing; run make hooks to install it beside this hook" >&2
     exit 2
 fi
 
@@ -33,41 +44,53 @@ cc=$(printf '%s\n' "$cfg" | tail -n 1 | sed 's/^[^ ]* //') || exit 2
 mode=$(git config --get commit.cleanup)
 [ $? -le 1 ] || { echo 'commit-msg: git config failed' >&2; exit 2; }
 
-msg=$(CC=$cc MODE=${mode:-default} awk '
-    { line[NR] = $0 }
-    function scissors(c) { return c " ------------------------ >8 ------------------------" }
-    # git writes two comment lines under its own scissors line; a -m or -F
-    # message may carry the scissors text as its own.
-    function cut_at(c, i) { return line[i] == scissors(c) && i < NR && index(line[i + 1], c) == 1 }
-    END {
-        mode = ENVIRON["MODE"]
-        cc = ENVIRON["CC"]
-        guessed = 0
-        if (tolower(cc) == "auto") {
-            cc = ""
-            n = split("# ; @ ! $ % ^ & | :", cand, " ")
-            for (i = 1; i <= NR && cc == ""; i++)
-                for (k = 1; k <= n; k++)
-                    if (cut_at(cand[k], i)) { cc = cand[k]; break }
-            for (k = 1; k <= n && cc == ""; k++)
-                for (i = 1; i <= NR; i++)
-                    if (line[i] == cand[k]) { cc = cand[k]; break }
-            if (cc == "") { cc = "#"; guessed = 1 }
-        }
-        editor = 0
-        end = NR + 1
-        if (!guessed)
-            for (i = 1; i <= NR; i++) {
-                if (line[i] == cc) editor = 1
-                if (cut_at(cc, i)) { editor = 1; if (end > NR) end = i }
+# clean KEEP: the message up to git's scissors line, its comment lines
+# dropped as git's cleanup drops them unless KEEP is 1.
+clean() {
+    CC=$cc MODE=${mode:-default} KEEP=$1 awk '
+        { line[NR] = $0 }
+        function scissors(c) { return c " ------------------------ >8 ------------------------" }
+        # git writes two comment lines under its own scissors line; a -m or -F
+        # message may carry the scissors text as its own.
+        function cut_at(c, i) { return line[i] == scissors(c) && i < NR && index(line[i + 1], c) == 1 }
+        END {
+            mode = ENVIRON["MODE"]
+            cc = ENVIRON["CC"]
+            guessed = 0
+            if (tolower(cc) == "auto") {
+                cc = ""
+                n = split("# ; @ ! $ % ^ & | :", cand, " ")
+                for (i = 1; i <= NR && cc == ""; i++)
+                    for (k = 1; k <= n; k++)
+                        if (cut_at(cand[k], i)) { cc = cand[k]; break }
+                for (k = 1; k <= n && cc == ""; k++)
+                    for (i = 1; i <= NR; i++)
+                        if (line[i] == cand[k]) { cc = cand[k]; break }
+                if (cc == "") { cc = "#"; guessed = 1 }
             }
-        # git -v drops everything from its scissors line in every mode; only
-        # strip, and the default in an editor session, drop comment lines.
-        drop = mode == "strip" || (mode != "scissors" && mode != "whitespace" && mode != "verbatim" && editor)
-        for (i = 1; i < end; i++)
-            if (!drop || index(line[i], cc) != 1) print line[i]
-    }' "$1") || { echo 'commit-msg: the message file could not be read' >&2; exit 2; }
+            editor = 0
+            end = NR + 1
+            if (!guessed)
+                for (i = 1; i <= NR; i++) {
+                    if (line[i] == cc) editor = 1
+                    if (cut_at(cc, i)) { editor = 1; if (end > NR) end = i }
+                }
+            # git -v drops everything from its scissors line in every mode; only
+            # strip, and the default in an editor session, drop comment lines.
+            drop = ENVIRON["KEEP"] != "1" && (mode == "strip" || (mode != "scissors" && mode != "whitespace" && mode != "verbatim" && editor))
+            for (i = 1; i < end; i++)
+                if (!drop || index(line[i], cc) != 1) print line[i]
+        }' "$2"
+}
+msg=$(clean 0 "$1") || { echo 'commit-msg: the message file could not be read' >&2; exit 2; }
+kept=$(clean 1 "$1") || { echo 'commit-msg: the message file could not be read' >&2; exit 2; }
 
-exec "$policy" - <<END
+# The worse exit wins: 2 (could not judge) over 1 (refused) over 0.
+rc=0
+"$policy" --skip-instructions-only - <<END || rc=$?
+$kept
+END
+"$policy" --no-skip-instructions - <<END || { r=$?; [ "$r" -gt "$rc" ] && rc=$r; }
 $msg
 END
+exit "$rc"

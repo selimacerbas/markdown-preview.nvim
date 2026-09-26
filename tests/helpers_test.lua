@@ -4,7 +4,7 @@
 -- (3), an error a callback raises failing the suite (4), H.expect_error (5),
 -- H.rtp's proof of the copy require loads (6) and one spelling per path (7).
 --
--- Run: nvim --headless -u NONE -l tests/helpers_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/helpers_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 local xdg = H.isolate()
@@ -136,8 +136,8 @@ H.section("Section 3: the exit code is the ruling")
 -- (otherwise stdout is read before stderr); a merged case skips, counted,
 -- where no sh is on PATH (the hosted Windows runner has Git's). The first
 -- hosted run's log reads as a Windows child ending its lines in \r\n, which
--- a pattern naming \n misses (the next Windows run is the measurement), so
--- the output is read with every line end folded to \n, once, here. A case
+-- a pattern naming \n misses, so the output is read with every line end
+-- folded to \n, once, here (the hosted Windows runs since pass with it). A case
 -- that fails names the pattern it missed and the child's output, each on
 -- one line (vim.inspect escapes the newlines %q would write), so a Results
 -- line inside either never starts a line of this suite's own log, where the
@@ -197,9 +197,20 @@ uv.kill(uv.os_getpid(), "sigkill")]],
 	)
 end
 eq(
-	child_exit('H.ok(true, "x")\nH.skip("y")\nH.finish()', "Results: 1 passed, 0 failed, 1 skipped"),
+	child_exit(
+		'for i = 1, 4 do H.ok(true, "x" .. i) end\nH.skip("y")\nH.finish()',
+		"Results: 4 passed, 0 failed, 1 skipped"
+	),
 	0,
-	"a skip is counted and fails nothing"
+	"a skip within a quarter of the passes is counted and fails nothing"
+)
+eq(
+	child_exit(
+		'for i = 1, 3 do H.ok(true, "x" .. i) end\nH.skip("y")\nH.finish()',
+		"FAIL: 1 skipped against 3 passed, over a quarter of the passes\n.-Results: 3 passed, 1 failed, 1 skipped"
+	),
+	1,
+	"skips over a quarter of the passes fail the suite, naming the count"
 )
 eq(
 	child_exit('H.skip("y")\nH.finish()', "Results: 0 passed, 0 failed, 1 skipped"),
@@ -930,7 +941,7 @@ end
 -- realpath's answer, not the walk's: macOS's refuses it with ENAMETOOLONG
 -- (measured), which the walk up must raise rather than climb to a prefix
 -- short enough to resolve; glibc's allocates its own buffer and resolves it
--- (read from its source; the ubuntu job is the measurement), which H.canon
+-- (measured on the hosted ubuntu runs), which H.canon
 -- must then answer with. The row asks the platform first and pins that
 -- answer; any other answer stays red, quoted. The spelling climbs back to
 -- phys, so a resolution is pinned to phys's own name as well: H.canon's

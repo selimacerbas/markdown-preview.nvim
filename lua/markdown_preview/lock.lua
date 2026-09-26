@@ -43,15 +43,17 @@ function M.write(port, workspace, token)
 		token = token, -- nil OK; secondary instances need this to hit /__live/inject
 	})
 	-- Mode 0600 (decimal 384) so the token isn't world-readable on multi-user
-	-- systems. The open applies the mode only when it creates the file, so a
-	-- lockfile an older version left 0644 kept that mode through the truncate
-	-- (measured); fchmod tightens it before the token is written, and a file
-	-- that cannot be made private gets no token.
+	-- systems. The open applies the mode only when it creates the file (a
+	-- direct call on an existing 0644 file kept that mode through the
+	-- truncate, measured; start() removes the lock first, so it never meets
+	-- one); fchmod makes the file private before the token is written, and a
+	-- file that cannot be made private gets no token.
 	local fd = assert(uv.fs_open(path, "w", 384))
 	local private, chmod_err = uv.fs_fchmod(fd, 384)
 	if not private then
 		uv.fs_close(fd)
-		error("markdown-preview.nvim: cannot make the lockfile private: " .. tostring(chmod_err))
+		-- Level 0: the start-failure notice shows the message, with no position.
+		error("cannot make the lock file private: " .. tostring(chmod_err), 0)
 	end
 	assert(uv.fs_write(fd, json, 0))
 	assert(uv.fs_close(fd))

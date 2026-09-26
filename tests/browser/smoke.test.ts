@@ -19,6 +19,7 @@ let errLog = "";
 let sock = "";
 let env: Record<string, string | undefined> = {};
 let liveServer = "";
+let liveServerEntry = "";
 let nvim: ReturnType<typeof Bun.spawn> | undefined;
 let browser: Browser | undefined;
 let page: Page | undefined;
@@ -33,18 +34,24 @@ const isDir = (p: string) => existsSync(p) && statSync(p).isDirectory();
 const readText = (p: string) => (p && existsSync(p) ? readFileSync(p, "utf8") : "");
 
 // The lookup tests/helpers.lua's H.rtp makes, so the suites and this test
-// load the same live-server.
-function findLiveServer(): string {
+// load the same live-server: an empty LIVE_SERVER_RTP reads as unset, a
+// relative one resolves against the repository root (tests/run.sh runs the
+// suites from there, make test-browser runs this from tests/browser), and
+// the name found goes on the runtimepath as it is, so a link to a directory
+// whose real name the runtimepath would split still loads. The real name is
+// what the origin proof compares.
+function findLiveServer(): { entry: string; real: string } {
   const override = process.env.LIVE_SERVER_RTP;
   const candidates: string[] = [];
   if (override) {
-    if (!isDir(override)) throw new Error(`LIVE_SERVER_RTP is set but is not a directory: ${override}`);
-    candidates.push(override);
+    const named = resolve(root, override);
+    if (!isDir(named)) throw new Error(`LIVE_SERVER_RTP is set but is not a directory: ${override}`);
+    candidates.push(named);
   }
   candidates.push(join(root, "live-server-rtp"), join(dirname(root), "live-server.nvim"));
   const found = candidates.find(isDir);
   if (!found) throw new Error(`live-server.nvim not found: set LIVE_SERVER_RTP or clone it to ${candidates.join(" or ")}`);
-  return realpathSync(found);
+  return { entry: found, real: realpathSync(found) };
 }
 
 function within<T>(ms: number, what: string, p: Promise<T>): Promise<T> {
@@ -162,7 +169,7 @@ async function openPage() {
 }
 
 beforeAll(async () => {
-  liveServer = findLiveServer();
+  ({ entry: liveServerEntry, real: liveServer } = findLiveServer());
   console.log(`live-server.nvim: ${liveServer}`);
   work = mkdtempSync(join(tmpdir(), "mp-smoke-"));
   const md = join(work, "doc.md");
@@ -184,7 +191,7 @@ beforeAll(async () => {
   nvim = Bun.spawn(
     [
       "nvim", "--headless", "-u", "NONE", "--listen", sock,
-      "-c", `lua vim.opt.rtp:prepend(${lua(liveServer)}) vim.opt.rtp:prepend(${lua(root)})`,
+      "-c", `lua vim.opt.rtp:prepend(${lua(liveServerEntry)}) vim.opt.rtp:prepend(${lua(root)})`,
       "-c", `lua vim.cmd.edit(vim.fn.fnameescape(${lua(md)})) vim.bo.filetype = 'markdown'`,
       "-c", setup, "-c", "lua require('markdown_preview').start()",
     ],
@@ -247,11 +254,21 @@ test("renders the buffer and follows an edit through the plugin's autocmds and S
     if (!reloads.some((d) => /"path":"content\.md"/.test(d))) {
       throw new Error(`the plugin's own reload push never reached the page; reloads seen: ${JSON.stringify(reloads)}`);
     }
-    // A CDN library that failed to load is a gate failure with its URL named,
-    // not a flake to retry blind.
+    // A CDN library that failed to load, or answered 400 and up (a 503 on a
+    // renderer dependency passed before), is a gate failure with its URL
+    // named, not a flake to retry blind; a clean run has none (measured).
     expect(failedRequests).toEqual([]);
+    expect(badResponses).toEqual([]);
     expect(pageErrors).toEqual([]);
+    // An error in the plugin's edit path reached Neovim's stderr while the
+    // page still updated; a clean run leaves stderr empty (measured).
+    await Bun.sleep(300);
+    expect(readText(errLog).trim()).toBe("");
   } catch (e) {
-    throw new Error(`${(e as Error).message}\n${await diagnosis()}`);
+    // The failing assertion's own error, so its frame and stack stay the
+    // ones a red run shows, with the diagnosis appended to its message.
+    const err = e instanceof Error ? e : new Error(String(e));
+    err.message = `${err.message}\n${await diagnosis()}`;
+    throw err;
   }
 }, 120_000);

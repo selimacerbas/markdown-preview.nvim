@@ -5,7 +5,7 @@
 -- at load between them), unless the config opted out; on a supported
 -- version the commands are defined.
 --
--- Run: nvim --headless -u NONE -l tests/floor_guard_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/floor_guard_test.lua"
 -- live-server.nvim is found by tests/helpers.lua ($LIVE_SERVER_RTP,
 -- ./live-server-rtp, the checkout's sibling live-server.nvim).
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))

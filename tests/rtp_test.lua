@@ -10,7 +10,7 @@
 -- an 8.3 name or a backslash on Windows, or /var against /private/var on
 -- macOS, never reads as a different file.
 --
--- Run: nvim --headless -u NONE -l tests/rtp_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/rtp_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()
@@ -178,9 +178,9 @@ end
 H.section("Section 1: a lookup that cannot be proven raises")
 local code, out = child(helpers_path, "H.rtp()", "/nonexistent")
 eq(
-	ruling(code, out, "LIVE_SERVER_RTP is set but is not a directory: /nonexistent"),
+	ruling(code, out, "child_test.lua:2: LIVE_SERVER_RTP is set but is not a directory: /nonexistent"),
 	1,
-	"an override that is not a directory raises"
+	"an override that is not a directory raises at the suite's line"
 )
 
 -- H.root follows the helper's own path, so a copy of it in a tree with no
@@ -193,7 +193,7 @@ fixture("no candidate on any lookup path raises, naming the clone, the floor and
 		ruling(
 			code,
 			out,
-			("live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (%s or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
+			("child_test.lua:2: live-server.nvim not found: clone https://github.com/selimacerbas/live-server.nvim (%s or newer) to %s/live-server-rtp or %s/live-server.nvim"):format(
 				H.live_server_floor,
 				H.canon(bare),
 				H.canon(base .. "/bare")
@@ -318,7 +318,7 @@ fixture("a live-server directory that carries this plugin's modules raises, nami
 		ruling(
 			code,
 			out,
-			("the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua (live-server.nvim at %s carries this plugin's modules too)"):format(
+			("child_test.lua:2: the checkout at %s does not resolve: %s/lua/markdown_preview/init.lua (live-server.nvim at %s carries this plugin's modules too)"):format(
 				H.root,
 				H.canon(dep),
 				H.canon(dep)

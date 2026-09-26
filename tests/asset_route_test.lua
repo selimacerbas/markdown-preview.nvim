@@ -5,7 +5,7 @@
 -- plugin's asset_root sidecar, which names the document's directory, stays
 -- behind the token.
 --
--- Run: nvim --headless -u NONE -l tests/asset_route_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/asset_route_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()
@@ -46,10 +46,12 @@ H.eq(
 	"a path above the document's directory is 404"
 )
 -- Containment is by the resolved path, not the spelling: a lexical check
--- served a link like this one (measured on a live-server mutant). A link
--- that cannot be made, or is made and does not resolve (Windows takes the /
--- in its target unconverted), proves nothing and is skipped, counted.
-local linked, link_err = uv.fs_symlink("../outside.txt", dir .. "/link.txt")
+-- served a link like this one (measured on a live-server mutant). The
+-- target is written with the platform's separator, since Windows took a /
+-- in it unconverted and the link did not resolve (measured on the hosted
+-- runner); a link that cannot be made or does not resolve proves nothing
+-- and is skipped, counted.
+local linked, link_err = uv.fs_symlink(".." .. package.config:sub(1, 1) .. "outside.txt", dir .. "/link.txt")
 if linked and uv.fs_stat(dir .. "/link.txt") then
 	H.eq(
 		H.http_get(base .. "/__live/asset?p=link.txt&t=" .. mp._token).status,

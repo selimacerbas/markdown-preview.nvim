@@ -11,15 +11,20 @@ All notable changes to this project; versions follow SemVer. From `[Unreleased]`
 ### Changed
 
 - The start-failure notification reads `Markdown Preview: failed to start server (port <port>): <reason>`.
+- `vim.uv` replaces the deprecated `vim.loop` throughout.
 
 ### Removed
 
 - **BREAKING:** Neovim 0.9, which the README listed as supported. Every release since v1.0.0 needed Neovim 0.10 and failed at first use on 0.9; the requirement is now checked at load, so on 0.9 the plugin shows one notification, "markdown-preview.nvim requires Neovim 0.10 or newer", and every command refuses with the same message.
 - The unreferenced 7 MB demo gif, so a fresh checkout is smaller.
 
+### Fixed
+
+- A takeover-mode lock file that cannot be made private fails the start with the start-failure notification; before, the server stayed running with an empty lock and the start raised a Lua error.
+
 ### Security
 
-- The takeover-mode lock file is set to mode 0600 before the session token is written to it; an older version applied 0600 only to a file it created, so a lock file that already existed stayed 0644. The loopback preview page still carries the token (SECURITY.md).
+- The takeover-mode lock file is made private (mode 0600) on the open file before the session token is written to it, whatever the file was before; the open's own mode applies only to a file it creates. No released version left the token readable by others: `:MarkdownPreview` has removed the lock before every write since the token joined it in v1.8.0, and the 0644 lock files of v1.7.0 and earlier held no token. The loopback preview page still carries the token (SECURITY.md).
 
 ## [1.10.0] - 2026-07-07
 

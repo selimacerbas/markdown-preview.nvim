@@ -42,4 +42,4 @@ jobs:
       - name: Version
         run: nvim --version | head -n 3
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh

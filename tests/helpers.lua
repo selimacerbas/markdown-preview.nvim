@@ -50,8 +50,8 @@ end
 -- compare as some other file: a file that exists and cannot be resolved (a
 -- symlink loop, a refused search), or a name the platform's realpath calls
 -- too long (ENAMETOOLONG). That errno is the platform's, not this walk's:
--- macOS's realpath refuses a spelling over PATH_MAX (measured), glibc's
--- resolves one (read from its source); a component over NAME_MAX cannot
+-- macOS's realpath refuses a spelling over PATH_MAX, glibc's resolves one
+-- (both measured on the hosted runners); a component over NAME_MAX cannot
 -- exist, and past a missing directory it is looked up as a missing name, so
 -- it reads as a path until that directory is made.
 local function realpath(name)
@@ -266,6 +266,7 @@ end
 local RTP_SYNTAX =
 	"a name the runtimepath reads differently (a comma, a dollar sign, a glob character, a backslash, a brace, or a name ending in after)"
 
+-- parity: own lines begin (tests/parity.sh compares the rest with the sibling)
 -- The live-server floor this plugin's release notes promise, written once:
 -- the not-found message and the suites read it here, and CI's floor step
 -- checks this line against the workflow's LIVE_SERVER_FLOOR.
@@ -274,7 +275,7 @@ H.live_server_floor = "v1.5.0"
 -- The checkout goes first on the runtimepath, by the name the helper was
 -- loaded through, and proves it is the copy require loads.
 -- live-server.nvim's copy of this file is one source with this one outside
--- H.live_server_floor and H.rtp, indentation aside: here H.rtp proves this
+-- these own lines, indentation aside: here H.rtp proves this
 -- plugin's modules and then finds live-server as a dependency, from
 -- $LIVE_SERVER_RTP, ./live-server-rtp (the CI checkout) or the checkout's
 -- sibling live-server.nvim (the developer's clone); the first that exists
@@ -382,6 +383,7 @@ function H.rtp()
 		2
 	)
 end
+-- parity: own lines end
 
 function H.tmpdir()
 	local dir = vim.fn.tempname()
@@ -422,8 +424,8 @@ end
 -- hosted Windows run read a refused port as a timeout (curl 28) under a
 -- connect bound of 2, which fits Windows retrying a refused loopback connect
 -- for about two seconds before it reports it; the bound now sits above that
--- window and below --max-time, so refused should read curl 7 there too (the
--- next Windows run is the measurement).
+-- window and below --max-time, and the hosted Windows runs since read a
+-- refused port as curl 7 (measured).
 function H.http_get(url, headers)
 	local cmd = {
 		"curl",
@@ -623,8 +625,12 @@ end
 
 -- The exit code is the ruling every gate reads; the summary is for the reader.
 -- A suite that asserted nothing proved nothing, so it fails as well, and so
--- does one whose callbacks raised. The Results line a runner greps for
--- follows the banner, a line of the helper's own, so it always starts a line.
+-- does one whose callbacks raised, and one whose skips exceed a quarter of
+-- its passes: a leg that turns rows into skips must not stay green, and the
+-- worst ratio measured is 16 skips to 91 passes (the hosted Windows
+-- helpers_test) and 2 to 9 (host_binding behind a Mac's firewall). The
+-- Results line a runner greps for follows the banner, a line of the
+-- helper's own, so it always starts a line.
 -- cq ends the run through Neovim's own teardown; where Ex commands are refused
 -- (textlock, an expr mapping: E565) it raised and the run went on to exit 0
 -- (measured), so a cq that raises or returns falls through to the real exit.
@@ -637,6 +643,10 @@ function H.finish()
 	end
 	if passed + failed == 0 then
 		H.write_line("No assertion ran: a suite that checks nothing is not a pass.")
+	end
+	if passed > 0 and skipped * 4 > passed then
+		failed = failed + 1
+		H.write_line(("  FAIL: %d skipped against %d passed, over a quarter of the passes"):format(skipped, passed))
 	end
 	H.write_line("")
 	H.write_line("========================================")

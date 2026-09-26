@@ -5,7 +5,7 @@
 -- without git's index (a git archive copy, a tarball) fails here, saying
 -- so, instead of checking nothing.
 --
--- Run: nvim --headless -u NONE -l tests/parse_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/parse_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()
@@ -26,6 +26,7 @@ for _, rel in ipairs(files) do
 	H.ok(chunk ~= nil, rel .. " parses" .. (err and (": " .. err) or ""))
 end
 
+-- parity: own lines begin (tests/parity.sh compares the rest with the sibling)
 -- A wrong repository name or a self-named entry in lazy.lua would make
 -- lazy.nvim install the wrong plugin or clone upstream beside the user's
 -- copy, so its content is pinned whole.
@@ -42,4 +43,5 @@ H.ok(
 	'the spec is { "selimacerbas/live-server.nvim" } with no other key'
 )
 
+-- parity: own lines end
 H.finish()
