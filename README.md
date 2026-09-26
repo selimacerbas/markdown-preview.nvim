@@ -113,7 +113,7 @@ require("markdown_preview").setup({
   content_name = "content.md",          -- workspace content file
   index_name = "index.html",            -- workspace HTML file
   custom_css = "",                      -- CSS file layered over bundled styles (~ and $VARS ok; "" = off)
-  workspace_dir = nil,                  -- nil = auto (shared for takeover, per-buffer for multi)
+  workspace_dir = nil,                  -- nil = auto (shared for takeover, per-buffer for multi); multi mode serves a set directory whole, so keep nothing else in it: on a network bind its other files need no token
 
   overwrite_index_on_start = true,      -- copy plugin's index.html on every start
 
@@ -185,7 +185,7 @@ The notification will show the full URL including the auth token (e.g. `http://1
 
 > **Security notes for network binding**
 >
-> - With a non-loopback `host`, the tokenized URL is required for *everything*, including the page itself — requests without `?t=<token>` get 401. Peers on your network cannot read your buffer without the URL.
+> - With a non-loopback `host`, the tokenized URL is required for *everything* the plugin writes, including the page itself: requests without `?t=<token>` get 401. Peers on your network cannot read your buffer without the URL. A `workspace_dir` set in multi mode is served whole, so any other file you keep there is readable without it.
 > - Traffic is plain, unencrypted HTTP. Anyone who obtains the URL (or can sniff the local network) can read the previewed buffer while the preview runs.
 > - Takeover mode supports `host = "127.0.0.1"` or `"0.0.0.0"` only. To bind a specific interface, use `instance_mode = "multi"`.
 > - Zero-config alternative: keep the default loopback bind and tunnel instead — `ssh -L 8421:localhost:8421 <remote>` — then open the URL printed by `on_start` locally, replacing the host with `127.0.0.1`. Nothing is exposed to the network, and traffic is encrypted by SSH.
