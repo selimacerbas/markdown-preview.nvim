@@ -186,7 +186,7 @@ eq(
 -- H.root follows the helper's own path, so a copy of it in a tree with no
 -- ./live-server-rtp and no sibling clone finds nothing; the message names
 -- where to clone from, the floor and both paths, canonical.
-fixture("no candidate on any lookup path raises at the suite's line, naming the clone, the floor and both paths", ONE, function(msg)
+fixture("no candidate on any lookup path raises, naming the clone, the floor and both paths", ONE, function(msg)
 	local bare = base .. "/bare/mp"
 	code, out = child(tree(bare), "H.rtp()", "")
 	eq(
@@ -308,7 +308,7 @@ end)
 -- The live-server directory goes before the checkout on the runtimepath, so
 -- one that also carries this plugin's modules answered require while every
 -- proof passed (measured); the root is proven again after the prepend.
-fixture("a live-server directory that carries this plugin's modules raises at the suite's line, naming them", ONE, function(msg)
+fixture("a live-server directory that carries this plugin's modules raises, naming them", ONE, function(msg)
 	local dep = base .. "/dep"
 	stub(dep)
 	vim.fn.mkdir(dep .. "/lua/markdown_preview", "p")
