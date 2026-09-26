@@ -248,13 +248,13 @@ jobs:
   # The pull request arm judges a contributor's commits, title and body before
   # they land; the push arm reports what already landed on main, a direct push
   # and the merge or squash commit GitHub composes included. A push range it
-  # cannot read is noticed, never judged. A pull request GitHub's Dependabot
+  # cannot read is noticed, never judged. A manual run judges the commit it
+  # runs on, alone. A pull request GitHub's Dependabot
   # opened (keyed on the login GitHub sets, never on a commit's author name,
   # which anyone can write) is machine-authored: its sign-off line is
   # accepted on its commits and its body, release notes, is not judged; the
   # maintainer replaces that body when merging (CONTRIBUTING.md).
   commits:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -317,7 +317,10 @@ jobs:
             echo "::notice::a Dependabot pull request: its sign-off line is accepted on each commit"
             drop='/^Signed-off-by: dependabot\[bot\] <support@github\.com>$/d'
           fi
-          if [ "$EVENT" = pull_request ]; then
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "::notice::a manual run names no range; the commit it runs on is judged alone"
+            range="$GITHUB_SHA^!"
+          elif [ "$EVENT" = pull_request ]; then
             # The test merge's first parent is the base GitHub merged into;
             # pull_request.base.sha goes stale once the branch merges main.
             range="$(git rev-parse "$GITHUB_SHA^1")..$PR_HEAD"
@@ -423,19 +426,21 @@ jobs:
             esac
           done
 
-  # The one status check branch protection is meant to require (an operator
-  # step later). Each gating job is named, so an empty or shortened needs list
+  # The one status check branch protection requires, strict, on both
+  # repositories. Its context is this job's id, so renaming the job or giving
+  # it a name: leaves every pull request waiting on a check that never
+  # reports. Each gating job is named, so an empty or shortened needs list
   # cannot pass. Each check line ends in exit 1: under bash -e a failed test
   # inside an && list does not stop the script, so a later line that passed
-  # would pass a red run (measured). commits runs on every pull request and
-  # push, so only a manual run may skip it.
+  # would pass a red run (measured). commits runs on every event, so a manual
+  # run of a pull request's head posts no green ci-ok that judged no commit.
   ci-ok:
     if: always()
     needs: [test, floor, floor-below, lint-workflows, format, commits, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every gating job succeeded (commits is skipped on a manual run)
+      - name: Every gating job succeeded
         env:
           EVENT: ${{ github.event_name }}
           TEST: ${{ needs.test.result }}
@@ -447,5 +452,5 @@ jobs:
           BROWSER: ${{ needs.browser.result }}
         run: |
           echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS browser=$BROWSER"
-          [ "$COMMITS" = success ] || { [ "$EVENT" = workflow_dispatch ] && [ "$COMMITS" = skipped ]; } || exit 1
+          [ "$COMMITS" = success ] || exit 1
           [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] && [ "$BROWSER" = success ] || exit 1
