@@ -3,7 +3,7 @@
 STYLUA_VERSION := 2.5.2
 STYLUA := bun x @johnnymorganz/stylua-bin@$(STYLUA_VERSION)
 
-.PHONY: help test test-browser hooks fmt fmt-check lint-text lint-blame
+.PHONY: help test test-browser hooks parity fmt fmt-check lint-text lint-blame
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## / : /'
 
@@ -33,6 +33,12 @@ hooks: ## Install the commit-msg hook and a copy of the message policy into this
 	dir=$$(git rev-parse --git-path hooks) && mkdir -p "$$dir" \
 	    && install -m 755 .githooks/message-policy "$$dir/message-policy" \
 	    && install -m 755 .githooks/commit-msg "$$dir/commit-msg" && echo "hooks: installed $$dir/commit-msg and $$dir/message-policy"
+
+# tests/parity.sh holds the list of the files the two plugins share. make
+# exits 2 for any failed recipe, so the script's own codes (1 drifted, 2
+# could not compare) show in its output or in a direct run.
+parity: ## Compare the files shared with the sibling plugin (SIBLING=<its checkout>)
+	@sh tests/parity.sh "$(SIBLING)"
 
 # Tracked Lua files only, so an untracked directory (a live-server-rtp/
 # checkout, node_modules/) never enters. StyLua exits 0 when it is handed no

@@ -15,7 +15,7 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 - `lazy.lua`: the spec lazy.nvim reads from this plugin, listing live-server.nvim alone; it stays in step with the README's lazy.nvim snippet
 - `tests/`: the headless suites, `helpers.lua` (the harness), `run.sh` (the runner) and `floor_smoke.sh` (the below-floor smoke)
 - `tests/browser/`: the browser smoke test (`smoke.test.ts`), a bun package that pins Playwright exactly (`package.json`, `bun.lock`)
-- `.githooks/commit-msg`: the hook `make hooks` copies into the clone with a copy of `.githooks/message-policy`, the one message policy the CI `commits` job runs too; the hook runs that copy, never the working tree's (a merge runs the hook with the merged tree checked out), so `make hooks` runs again after a policy change; `tests/message_policy_test.sh` measures both (shared byte for byte with live-server.nvim, as is the Makefile)
+- `.githooks/commit-msg`: the hook `make hooks` copies into the clone with a copy of `.githooks/message-policy`, the one message policy the CI `commits` job runs too; the hook runs that copy, never the working tree's (a merge runs the hook with the merged tree checked out), so `make hooks` runs again after a policy change; `tests/message_policy_test.sh` measures both
 
 ## Sibling dependency
 
@@ -60,7 +60,7 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 
 ## Test harness contract
 
-- `tests/helpers.lua` is one source with live-server.nvim's copy outside its `H.rtp` region and the `H.live_server_floor` block, indentation aside (tabs here, 4 spaces there); live-server's copy is the source, so a change lands there first.
+- Shared files: `tests/parity.sh` lists every file this repository shares with live-server.nvim (the harness, the runner, the smoke, the hooks, the Makefile, the PR template) and how it is compared; `make parity SIBLING=../live-server.nvim` runs it and the `upstream` job reports it against live-server `main`. live-server's copy is the source, so a change lands there first. A Lua file compares by `diff -w` (tabs here, 4 spaces there) outside its `-- parity: own lines` markers: here `H.live_server_floor` and `H.rtp` in `tests/helpers.lua`, and the lazy.lua section of `tests/parse_test.lua`.
 - Isolation: `tests/run.sh` points the four XDG directories at a private `mktemp -d` before Neovim starts (a caller's exported one is kept), and `H.isolate()` moves cache, data and state again before the suite loads the plugin, failing loud when `stdpath()` does not follow.
 - Lookup: `H.rtp()` takes `$LIVE_SERVER_RTP`, then `./live-server-rtp` (the CI checkout), then `../live-server.nvim`; a set `LIVE_SERVER_RTP` (empty reads as unset) that is not a directory raises instead of falling through, otherwise the first that exists wins, and finding none raises. `tests/browser/smoke.test.ts` makes the same lookup, prints the chosen path, gives Neovim four XDG directories of its own, and proves over RPC that `markdown_preview` and `live_server.server` loaded from the chosen roots.
 - Proof: every module of this plugin, and live-server's `server` and `util` (the modules the plugin loads, as the pinned floor ships them), must resolve from the chosen entries, or the suite raises instead of loading an installed copy.

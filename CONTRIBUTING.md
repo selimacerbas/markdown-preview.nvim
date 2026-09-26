@@ -20,6 +20,10 @@ runs every suite through `tests/run.sh`, the same loop CI runs, and then `tests/
 
 runs `tests/browser/smoke.test.ts`: a headless Neovim serves a buffer, Playwright's headless Chromium renders the page, and an edit reaches it over SSE. It needs network, since the page loads its libraries from jsDelivr and unpkg; a red run prints Neovim's output and exit, the page's errors and console warnings, pending and failed requests, 4xx and 5xx responses and the page's state.
 
+## Shared files
+
+markdown-preview.nvim and live-server.nvim share their test harness, their hooks, the Makefile and the PR template. `tests/parity.sh` lists every shared file and how it is compared, and `make parity SIBLING=../live-server.nvim` compares them with a sibling checkout. live-server.nvim's copy is the source: a change to a shared file lands there first and is copied here.
+
 ## Format
 
     make fmt        # StyLua, the version pinned in the Makefile; bun is the one prerequisite (make fmt-check is what CI runs; make lint-text and make lint-blame are the other gates; make test runs the suites)

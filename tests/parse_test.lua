@@ -26,6 +26,7 @@ for _, rel in ipairs(files) do
 	H.ok(chunk ~= nil, rel .. " parses" .. (err and (": " .. err) or ""))
 end
 
+-- parity: own lines begin (tests/parity.sh compares the rest with the sibling's copy)
 -- A wrong repository name or a self-named entry in lazy.lua would make
 -- lazy.nvim install the wrong plugin or clone upstream beside the user's
 -- copy, so its content is pinned whole.
@@ -42,4 +43,5 @@ H.ok(
 	'the spec is { "selimacerbas/live-server.nvim" } with no other key'
 )
 
+-- parity: own lines end
 H.finish()

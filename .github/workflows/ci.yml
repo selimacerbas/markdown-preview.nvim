@@ -173,6 +173,11 @@ jobs:
         run: nvim --version | head -n 3
       - name: Headless tests
         run: bash tests/run.sh
+      # The files shared with live-server.nvim against its main, reported here
+      # outside ci-ok: a drift is a copy one side still owes the other.
+      - name: Shared-file parity with live-server main
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: sh tests/parity.sh live-server-rtp
 
   # The suites on Windows, gating as the other test jobs do and on the
   # live-server floor as they are; it joined ci-ok after three green hosted
