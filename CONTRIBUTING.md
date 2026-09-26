@@ -1,6 +1,6 @@
 # Contributing
 
-Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text` and `make lint-blame` run here as they run in CI, and the gating `browser` job runs locally as `make test-browser`. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, or a binary from <https://github.com/rhysd/actionlint/releases>). The `floor` (Neovim 0.10.0), `floor-below` (Neovim 0.9.5), `windows`, `upstream` (live-server.nvim `main`) and `commits` jobs run only in CI; the commit-msg hook below runs the `commits` job's policy locally.
+Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text` and `make lint-blame` run here as they run in CI, and the gating `browser` job runs locally as `make test-browser`. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, whose formula brings shellcheck; a binary from <https://github.com/rhysd/actionlint/releases> does not, and without shellcheck on PATH actionlint skips its shell checks, so a local green can differ from CI's). The `floor` (Neovim 0.10.0), `windows`, `upstream` (live-server.nvim `main`) and `commits` jobs run only in CI; `floor-below` (Neovim 0.9.5) runs `tests/floor_smoke.sh`, which runs locally too with a Neovim below the floor first on PATH; the commit-msg hook below runs the `commits` job's policy locally. The `nightly` workflow runs the suites weekly against Neovim nightly and live-server `main`; GitHub disables a scheduled workflow after 60 days without a commit, and `gh workflow enable nightly` turns it back on.
 
 You need Neovim 0.10 or newer, a live-server.nvim checkout (found as below), curl for the three suites that make HTTP requests, bun for the formatter and the browser test, and Playwright's headless Chromium for the browser test (`cd tests/browser && bun install --frozen-lockfile && bun x playwright install --only-shell chromium`: the install first, so `bun x` runs the pinned Playwright and not npm's latest). The browser test's lockfile needs bun 1.4.0 or newer.
 
@@ -10,9 +10,11 @@ You need Neovim 0.10 or newer, a live-server.nvim checkout (found as below), cur
 
 runs every suite through `tests/run.sh`, the same loop CI runs, and then `tests/message_policy_test.sh`, which commits in a scratch repository through the hook (`sh tests/message_policy_test.sh` alone). Each suite is a plain Lua file under `tests/` that runs headless and exits 1 on any failure, so one can be run alone:
 
-    nvim --headless -u NONE -l tests/token_auth_test.lua
+    nvim --headless -u NONE -l "$PWD/tests/token_auth_test.lua"
 
-`tests/helpers.lua` finds live-server.nvim at `$LIVE_SERVER_RTP`, `./live-server-rtp` or `../live-server.nvim`, in that order, and isolates the run from your own Neovim cache.
+The absolute name is the one `tests/run.sh` passes: a relative one is made absolute against the physical directory, which loses a link the checkout is reached through (`tests/helpers.lua` says why that matters).
+
+`tests/helpers.lua` finds live-server.nvim at `$LIVE_SERVER_RTP`, `./live-server-rtp` or `../live-server.nvim`, in that order, and isolates the run from your own Neovim cache. The gating CI jobs run against the live-server floor (v1.5.0, pinned by commit in `ci.yml`), while a sibling clone is usually live-server `main`, the `upstream` job's pairing; to run locally against the floor the gates use, point `LIVE_SERVER_RTP` at a checkout of v1.5.0, or make `./live-server-rtp` a worktree of it: `git -C ../live-server.nvim worktree add "$PWD/live-server-rtp" v1.5.0`.
 
 ## Run the browser test
 
@@ -58,3 +60,20 @@ A pull request Dependabot opens is machine-authored, keyed on the pull request's
 2. Tag only a commit whose `ci-ok` is green (`gh run list --commit <sha>`): `git tag -a vX.Y.Z -m "vX.Y.Z"`, `git push origin vX.Y.Z`. The tags v1.0.0 to v1.2.1 are annotated and v1.3.0 to v1.10.0 are lightweight, so `git describe` needs `--tags` until the next annotated tag.
    The `release tags` ruleset refuses moving or deleting a `v*` tag, so a mistaken tag is fixed by editing the ruleset once (Settings, Rules). The live-server floor is pinned by tag and commit (`LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `ci.yml`, beside `H.live_server_floor` in `tests/helpers.lua`), and live-server's own `release tags` ruleset keeps that tag from moving; the local action `.github/actions/live-server-floor` reds the gating jobs when the three disagree.
 3. `gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file <the section as a file>`.
+
+### Moving a floor
+
+Two floors are stated here, and a change that moves one edits every place that states it, together (`git grep -n '0\.10'` and `git grep -n 'v1\.5\.0'` find them, beside harness comments that name a version they were measured on).
+
+The Neovim floor:
+
+- `lua/markdown_preview/floor.lua`: the check and the message, which the plugin file, the module and the smoke read;
+- `plugin/markdown-preview.lua`: the refusers' description, and the module's header comment in `lua/markdown_preview/init.lua`;
+- the README's requirements line and a CHANGELOG entry; AGENTS.md's Conventions; this file's prerequisites and job list;
+- `.github/workflows/ci.yml`: the `floor` job's version and name, `floor-below`'s version (the newest release below the floor), and the comments of the markdown parser step;
+- `tests/floor_guard_test.lua`, which pins the text, and the comments of `tests/floor_smoke.sh`.
+
+The live-server floor:
+
+- `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `.github/workflows/ci.yml` and `H.live_server_floor` in `tests/helpers.lua`, which the local action `.github/actions/live-server-floor` holds to one another;
+- AGENTS.md's Sibling dependency, a CHANGELOG entry and the bug template's version placeholder.

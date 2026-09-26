@@ -41,13 +41,13 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 - Gates by make target: `make fmt` (writes), `make fmt-check`, `make lint-text` (the em dash), `make lint-blame` (`.git-blame-ignore-revs`), `make test`, `make test-browser` (the browser smoke test, kept out of `make test`); `make hooks` installs the commit-msg hook; `make help` lists them.
 - CI runs the same targets: `make fmt-check`, `make lint-text` and `make lint-blame` as written, `tests/run.sh`, which `make test` runs, in the test, floor, upstream, windows and nightly jobs, and `tests/message_policy_test.sh`, which `make test` runs next, on the test job's Linux leg; the `browser` job runs `make test-browser`, which reads the JUnit report's counts.
 - No default keymaps (issue #4). No em dash character anywhere.
-- Commits: an imperative subject of at most 72 characters, a body wrapped at 72 columns that says why, no attribution trailer, no em dash, no workflow skip instruction (CONTRIBUTING.md lists each); `make hooks` installs the hook that refuses them, never `core.hooksPath`.
+- Commits: an imperative subject of at most 72 characters and a body wrapped at 72 columns that says why (prose rules, no gate checks them), and no attribution trailer, no em dash, no workflow skip instruction (CONTRIBUTING.md lists each); `make hooks` installs the hook that refuses those three, never `core.hooksPath`.
 - Release titles are clean version numbers (`v1.10.0`); the notes come from the version's section of `CHANGELOG.md`.
 
 ## Tests
 
 - `make test` runs `tests/run.sh` (every `tests/*_test.lua` under private XDG directories, then the help tags when `doc/` exists) and then `tests/message_policy_test.sh` (the policy script and the hook, committing in a scratch repository), and fails when either does.
-- One suite alone: `nvim --headless -u NONE -l tests/<file>_test.lua`.
+- One suite alone: `nvim --headless -u NONE -l "$PWD/tests/<file>_test.lua"` (the absolute name `tests/run.sh` passes, which keeps a link the checkout is reached through).
 - `helpers_test`: the harness itself (root and isolation, the bounded curl, exit rulings, callback errors, `H.expect_error`, `H.rtp`, path spelling).
 - `parse_test`: every tracked Lua file parses under this Neovim's LuaJIT (it needs a git checkout), and `lazy.lua` returns exactly one spec, `{ "selimacerbas/live-server.nvim" }`.
 - `rtp_test`: how `H.rtp()` proves the checkout and chooses live-server.nvim, and what it refuses.
@@ -74,6 +74,7 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 
 - `.github/workflows/ci.yml`: `test` (Linux and macOS, Neovim stable), `floor` (Neovim 0.10.0), `floor-below` (Neovim 0.9.5) and `windows` (Neovim stable) on the live-server floor; `lint-workflows`, `format`, `commits` and `browser` (Linux, Neovim stable, Playwright's headless Chromium, the live-server floor); `ci-ok` passes only when each of those passed; `commits` runs on every event, and a manual run judges the commit it runs on alone.
 - Reporting jobs: `upstream` (live-server `main`); `.github/workflows/nightly.yml` runs Neovim nightly against live-server `main` weekly and by hand. Neither is in `ci-ok`.
+- Checks only GitHub makes, none of them a make target: actionlint and the composite-action step check in `lint-workflows`; `sha_pinning_required` on the repository's Actions settings (every action pinned by SHA); the pull request title at most 65 characters and the title and body judged by the message policy (`commits`); branch protection on `main` requiring `ci-ok` (strict: the branch up to date), whose context is the job id, so renaming the job or giving it a `name:` leaves every pull request waiting; one approving review, which the maintainer's own pull requests pass through the administrator bypass, with stale approvals kept after a push; squash merges only, the commit taking `PR_TITLE` and `PR_BODY`; and the `release tags` rulesets of this repository and live-server.nvim, which refuse a moved or deleted `v*` tag.
 
 ## Testing by hand
 

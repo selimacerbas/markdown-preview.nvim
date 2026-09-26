@@ -11,11 +11,16 @@ All notable changes to this project; versions follow SemVer. From `[Unreleased]`
 ### Changed
 
 - The start-failure notification reads `Markdown Preview: failed to start server (port <port>): <reason>`.
+- `vim.uv` replaces the deprecated `vim.loop` throughout.
 
 ### Removed
 
 - **BREAKING:** Neovim 0.9, which the README listed as supported. Every release since v1.0.0 needed Neovim 0.10 and failed at first use on 0.9; the requirement is now checked at load, so on 0.9 the plugin shows one notification, "markdown-preview.nvim requires Neovim 0.10 or newer", and every command refuses with the same message.
 - The unreferenced 7 MB demo gif, so a fresh checkout is smaller.
+
+### Fixed
+
+- A takeover-mode lock file that cannot be made private fails the start with the start-failure notification; before, the server stayed running with an empty lock and the start raised a Lua error.
 
 ### Security
 
