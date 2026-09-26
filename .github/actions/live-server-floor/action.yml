@@ -35,7 +35,7 @@ runs:
         LIVE_SERVER_FLOOR: ${{ inputs.tag }}
         LIVE_SERVER_FLOOR_SHA: ${{ inputs.sha }}
       run: |
-        n=$(grep -oE "H(\.live_server_floor|\[[\"']live_server_floor[\"']\])[[:space:]]*=([^=]|\$)" tests/helpers.lua | wc -l | tr -d ' ')
+        n=$({ grep -oE "H(\.live_server_floor|\[[\"']live_server_floor[\"']\])[[:space:]]*=([^=]|\$)" tests/helpers.lua || true; } | wc -l | tr -d ' ')
         if [ "$n" != 1 ] || ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
           echo "::error::tests/helpers.lua must assign H.live_server_floor once, to \"$LIVE_SERVER_FLOOR\" (assignments: $n)"
           exit 1

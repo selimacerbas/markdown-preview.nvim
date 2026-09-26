@@ -236,10 +236,12 @@ jobs:
       - name: Composite action steps run unconditionally
         run: |
           set -euo pipefail
-          files=$(find .github/actions -type f \( -name action.yml -o -name action.yaml \))
-          [ -n "$files" ] || { echo "::error::no composite action found under .github/actions"; exit 2; }
+          dir=.github/actions
+          [ -d "$dir" ] || { echo "::error::no $dir directory to judge"; exit 2; }
+          seen=0
           fail=0
-          for f in $files; do
+          while IFS= read -r -d '' f; do
+            seen=$((seen + 1))
             if ! n=$(yq -r '[.runs.steps[] | select(has("if") or has("continue-on-error"))] | length' "$f"); then
               echo "::error::$f could not be read as YAML"
               exit 2
@@ -248,7 +250,8 @@ jobs:
               echo "::error::$f: $n step(s) carry an if: or a continue-on-error:"
               fail=1
             fi
-          done
+          done < <(find "$dir" -type f \( -name action.yml -o -name action.yaml \) -print0)
+          [ "$seen" -gt 0 ] || { echo "::error::no composite action found under $dir"; exit 2; }
           exit "$fail"
       - name: make lint-text
         run: make lint-text
