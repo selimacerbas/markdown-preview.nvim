@@ -232,6 +232,18 @@ jobs:
         with:
           entrypoint: sh
           args: -c "shellcheck -s sh tests/*.sh .githooks/commit-msg .githooks/message-policy"
+      # actionlint reads a composite action's call, never its steps, so a step
+      # made conditional (an if: on an input no caller passes) or allowed to
+      # fail would silence the floor check of five gating jobs.
+      - name: Composite action steps run unconditionally
+        run: |
+          rc=0
+          grep -nE '^[[:space:]]*(-[[:space:]]+)?(if|continue-on-error)[[:space:]]*:' .github/actions/*/action.yml || rc=$?
+          case $rc in
+            0) echo "::error::a composite action step carries an if: or a continue-on-error: (above)"; exit 1 ;;
+            1) ;;
+            *) echo "::error::the composite actions could not be read (grep exit $rc)"; exit 2 ;;
+          esac
       - name: make lint-text
         run: make lint-text
       - name: make lint-blame

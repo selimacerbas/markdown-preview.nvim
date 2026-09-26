@@ -24,17 +24,19 @@ runs:
         path: live-server-rtp
         persist-credentials: false
     # A moved tag is the supply-chain event this step surfaces: the checkout
-    # took the pinned commit, and the tag must still name it. The helper's
-    # floor assignment, matched as a whole line, must name the same tag, so a
-    # bump that edits one place reds even with the old line left in a comment.
+    # took the pinned commit, and the tag must still name it. The helper
+    # assigns the floor once, as a whole line naming the same tag, so a bump
+    # that edits one place reds even with the old line left in a comment, and
+    # a second assignment, which Lua would read last, reds too.
     - name: live-server floor is the pinned tag
       shell: bash
       env:
         LIVE_SERVER_FLOOR: ${{ inputs.tag }}
         LIVE_SERVER_FLOOR_SHA: ${{ inputs.sha }}
       run: |
-        if ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
-          echo "::error::tests/helpers.lua's H.live_server_floor does not name $LIVE_SERVER_FLOOR"
+        n=$(grep -cE '^[[:space:]]*H\.live_server_floor[[:space:]]*=' tests/helpers.lua || true)
+        if [ "$n" != 1 ] || ! grep -qxF "H.live_server_floor = \"$LIVE_SERVER_FLOOR\"" tests/helpers.lua; then
+          echo "::error::tests/helpers.lua must assign H.live_server_floor once, to \"$LIVE_SERVER_FLOOR\" (assignments: $n)"
           exit 1
         fi
         git -C live-server-rtp fetch --depth 1 origin "refs/tags/$LIVE_SERVER_FLOOR:refs/tags/$LIVE_SERVER_FLOOR"
