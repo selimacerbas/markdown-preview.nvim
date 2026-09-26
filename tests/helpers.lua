@@ -625,7 +625,10 @@ end
 
 -- The exit code is the ruling every gate reads; the summary is for the reader.
 -- A suite that asserted nothing proved nothing, so it fails as well, and so
--- does one whose callbacks raised. The Results line a runner greps for
+-- does one whose callbacks raised, and one whose skips exceed a quarter of
+-- its passes: a leg that turns rows into skips must not stay green, and the
+-- worst ratio measured is 16 skips to 91 passes (the hosted Windows
+-- helpers_test) and 2 to 9 (host_binding behind a Mac's firewall). The Results line a runner greps for
 -- follows the banner, a line of the helper's own, so it always starts a line.
 -- cq ends the run through Neovim's own teardown; where Ex commands are refused
 -- (textlock, an expr mapping: E565) it raised and the run went on to exit 0
@@ -639,6 +642,10 @@ function H.finish()
 	end
 	if passed + failed == 0 then
 		H.write_line("No assertion ran: a suite that checks nothing is not a pass.")
+	end
+	if passed > 0 and skipped * 4 > passed then
+		failed = failed + 1
+		H.write_line(("  FAIL: %d skipped against %d passed, over a quarter of the passes"):format(skipped, passed))
 	end
 	H.write_line("")
 	H.write_line("========================================")

@@ -197,9 +197,20 @@ uv.kill(uv.os_getpid(), "sigkill")]],
 	)
 end
 eq(
-	child_exit('H.ok(true, "x")\nH.skip("y")\nH.finish()', "Results: 1 passed, 0 failed, 1 skipped"),
+	child_exit(
+		'for i = 1, 4 do H.ok(true, "x" .. i) end\nH.skip("y")\nH.finish()',
+		"Results: 4 passed, 0 failed, 1 skipped"
+	),
 	0,
-	"a skip is counted and fails nothing"
+	"a skip within a quarter of the passes is counted and fails nothing"
+)
+eq(
+	child_exit(
+		'for i = 1, 3 do H.ok(true, "x" .. i) end\nH.skip("y")\nH.finish()',
+		"FAIL: 1 skipped against 3 passed, over a quarter of the passes\n.-Results: 3 passed, 1 failed, 1 skipped"
+	),
+	1,
+	"skips over a quarter of the passes fail the suite, naming the count"
 )
 eq(
 	child_exit('H.skip("y")\nH.finish()', "Results: 0 passed, 0 failed, 1 skipped"),
