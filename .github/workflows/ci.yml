@@ -231,16 +231,25 @@ jobs:
         run: make shellcheck SHELLCHECK="docker run --rm -v $GITHUB_WORKSPACE:/w:ro -w /w --entrypoint shellcheck rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667"
       # actionlint reads a composite action's call, never its steps, so a step
       # made conditional (an if: on an input no caller passes) or allowed to
-      # fail would silence the floor check of five gating jobs.
+      # fail would silence the floor check of five gating jobs. yq reads the
+      # steps as YAML, so a quoted key or a flow mapping cannot pass it.
       - name: Composite action steps run unconditionally
         run: |
-          rc=0
-          grep -nE '^[[:space:]]*(-[[:space:]]+)?(if|continue-on-error)[[:space:]]*:' .github/actions/*/action.yml || rc=$?
-          case $rc in
-            0) echo "::error::a composite action step carries an if: or a continue-on-error: (above)"; exit 1 ;;
-            1) ;;
-            *) echo "::error::the composite actions could not be read (grep exit $rc)"; exit 2 ;;
-          esac
+          set -euo pipefail
+          files=$(find .github/actions -type f \( -name action.yml -o -name action.yaml \))
+          [ -n "$files" ] || { echo "::error::no composite action found under .github/actions"; exit 2; }
+          fail=0
+          for f in $files; do
+            if ! n=$(yq -r '[.runs.steps[] | select(has("if") or has("continue-on-error"))] | length' "$f"); then
+              echo "::error::$f could not be read as YAML"
+              exit 2
+            fi
+            if [ "$n" != 0 ]; then
+              echo "::error::$f: $n step(s) carry an if: or a continue-on-error:"
+              fail=1
+            fi
+          done
+          exit "$fail"
       - name: make lint-text
         run: make lint-text
       - name: make lint-blame
