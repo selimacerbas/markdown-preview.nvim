@@ -15,7 +15,7 @@ Neovim plugin for live markdown preview in the browser. Pure Lua, no npm: the pl
 - `lazy.lua`: the spec lazy.nvim reads from this plugin, listing live-server.nvim alone; it stays in step with the README's lazy.nvim snippet
 - `tests/`: the headless suites, `helpers.lua` (the harness), `run.sh` (the runner) and `floor_smoke.sh` (the below-floor smoke)
 - `tests/browser/`: the browser smoke test (`smoke.test.ts`), a bun package that pins Playwright exactly (`package.json`, `bun.lock`)
-- `.githooks/commit-msg`: the hook `make hooks` copies into the clone; it runs `.githooks/message-policy`, the one message policy the CI `commits` job runs too; `tests/message_policy_test.sh` measures both (shared byte for byte with live-server.nvim, as is the Makefile)
+- `.githooks/commit-msg`: the hook `make hooks` copies into the clone with a copy of `.githooks/message-policy`, the one message policy the CI `commits` job runs too; the hook runs that copy, never the working tree's (a merge runs the hook with the merged tree checked out), so `make hooks` runs again after a policy change; `tests/message_policy_test.sh` measures both (shared byte for byte with live-server.nvim, as is the Makefile)
 
 ## Sibling dependency
 

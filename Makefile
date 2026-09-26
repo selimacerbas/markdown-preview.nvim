@@ -21,15 +21,18 @@ test-browser: ## Run the browser smoke test (network: Playwright's Chromium and 
 
 # Copied, never core.hooksPath: a hooks path inside the tracked tree runs the
 # hooks a checked-out branch carries, a fork's post-checkout during the
-# checkout itself; the copy runs this tree's policy only at commit time, the
-# trust make test on that branch already takes.
-hooks: ## Install the commit-msg hook into this clone
+# checkout itself. The policy is copied beside the hook, which runs that
+# copy: git runs commit-msg for a merge with the merged tree checked out, so
+# the tree's script would be the merged branch's. Run make hooks again after
+# a policy change; the CI commits job judges the recorded message regardless.
+hooks: ## Install the commit-msg hook and a copy of the message policy into this clone
 	@hp=$$(git config --get core.hooksPath); \
 	if [ -n "$$hp" ]; then \
-	    echo "hooks: core.hooksPath is $$hp, so a hook copied into this clone would never run (git config --unset core.hooksPath when it points at .githooks)" >&2; exit 1; \
+	    echo "hooks: core.hooksPath is $$hp, so a hook copied into this clone would never run (git config --unset core.hooksPath, or --global --unset where it is set globally)" >&2; exit 1; \
 	fi; \
 	dir=$$(git rev-parse --git-path hooks) && mkdir -p "$$dir" \
-	    && install -m 755 .githooks/commit-msg "$$dir/commit-msg" && echo "hooks: installed $$dir/commit-msg"
+	    && install -m 755 .githooks/message-policy "$$dir/message-policy" \
+	    && install -m 755 .githooks/commit-msg "$$dir/commit-msg" && echo "hooks: installed $$dir/commit-msg and $$dir/message-policy"
 
 # Tracked Lua files only, so an untracked directory (a live-server-rtp/
 # checkout, node_modules/) never enters. StyLua exits 0 when it is handed no

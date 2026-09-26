@@ -2,8 +2,11 @@
 # The one commit-message policy: the commit-msg hook runs it on the message
 # git will record, and the CI commits job on each commit and on a pull
 # request's title and body, so the two cannot drift. Usage:
-# message-policy <file>, or message-policy - to read stdin. Exit 0 is clean,
-# 1 is refused (one line per broken rule on stderr), 2 is could not judge.
+# message-policy [option] <file>, or - to read stdin. Exit 0 is clean, 1 is
+# refused (one line per broken rule on stderr), 2 is could not judge. The
+# options split the rules for the hook, which judges the skip instructions
+# on the message with its comment lines kept and the rest on the message
+# git's cleanup leaves: --skip-instructions-only and --no-skip-instructions.
 #
 # Every check is a byte match under the C locale: BSD sed and grep under a
 # UTF-8 locale die on a Latin-1 byte, and a dead tool must read as exit 2,
@@ -12,7 +15,12 @@
 LC_ALL=C
 export LC_ALL
 
-case $# in 1) ;; *) echo 'usage: message-policy <file> | message-policy -' >&2; exit 2 ;; esac
+rules=all
+case ${1:-} in
+    --skip-instructions-only) rules=skip; shift ;;
+    --no-skip-instructions) rules=content; shift ;;
+esac
+case $# in 1) ;; *) echo 'usage: message-policy [--skip-instructions-only | --no-skip-instructions] <file> | -' >&2; exit 2 ;; esac
 if [ "$1" = - ]; then
     msg=$(cat) || { echo 'message-policy: stdin could not be read' >&2; exit 2; }
 else
@@ -35,14 +43,14 @@ found() {
     return 0
 }
 
-if found -F -e "$(printf '\342\200\224')"; then
+if [ "$rules" != skip ] && found -F -e "$(printf '\342\200\224')"; then
     printf 'message-policy: the em dash character (U+2014) on line %s\n' "$nums" >&2
     fail=1
 fi
 
 # git's trailer parser folds case and accepts blanks before the colon.
 names='co-authored-by|signed-off-by|co-developed-by|assisted-by|generated-by|reviewed-by|acked-by|tested-by|suggested-by|reported-by'
-if found -i -E -e "^[[:blank:]]*($names)[[:blank:]]*:"; then
+if [ "$rules" != skip ] && found -i -E -e "^[[:blank:]]*($names)[[:blank:]]*:"; then
     what=$(printf '%s\n' "$hits" | awk '{ sub(/^[0-9]+:[ \t]*/, ""); sub(/[ \t]*:.*/, ""); printf "%s%s", (NR > 1 ? ", " : ""), $0 }') \
         || die 'awk failed naming the trailers'
     printf 'message-policy: an attribution trailer on line %s (%s)\n' "$nums" "$what" >&2
@@ -52,13 +60,13 @@ fi
 # GitHub skips every workflow of a push whose head commit carries a bracketed
 # instruction or a skip-checks trailer, so main would have no ci-ok run for it.
 what=
-for s in '[skip ci]' '[ci skip]' '[no ci]' '[skip actions]' '[actions skip]'; do
+[ "$rules" = content ] || for s in '[skip ci]' '[ci skip]' '[no ci]' '[skip actions]' '[actions skip]'; do
     if found -i -F -e "$s"; then
         what="$what${what:+, }$s on line $nums"
     fi
 done
 # [[:space:]] takes the carriage return a body from GitHub's web UI ends in.
-if found -i -E -e '^[[:blank:]]*skip-checks[[:blank:]]*:[[:blank:]]*true[[:space:]]*$'; then
+if [ "$rules" != content ] && found -i -E -e '^[[:blank:]]*skip-checks[[:blank:]]*:[[:blank:]]*true[[:space:]]*$'; then
     what="$what${what:+, }a skip-checks trailer on line $nums"
 fi
 if [ -n "$what" ]; then

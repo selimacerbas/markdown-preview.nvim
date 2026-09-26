@@ -89,6 +89,12 @@ pol 'Latin-1 bytes and no violation' 0 '' "$(printf 'Fix caf\351 na\357ve\n\nR\3
 # commits job judges.
 "$policy" "$src/.github/PULL_REQUEST_TEMPLATE.md" 2>"$tmp/err"
 judge 'policy: the pull request template passes' "$?" 0
+printf 'Fix it %s [skip ci]\n\nCo-authored-by: A\n' "$dash" | "$policy" --skip-instructions-only - 2>"$tmp/err"
+judge 'policy: --skip-instructions-only refuses the skip instruction alone' "$?" 1 'skip instruction ([skip ci] on line 1)'
+grep -qF -e 'em dash' -e 'attribution' "$tmp/err" && bad 'policy: --skip-instructions-only judges no other rule' 1 0
+printf 'Fix it %s [skip ci]\n' "$dash" | "$policy" --no-skip-instructions - 2>"$tmp/err"
+judge 'policy: --no-skip-instructions judges the other rules' "$?" 1 'em dash character'
+grep -qF -e 'skip instruction' "$tmp/err" && bad 'policy: --no-skip-instructions leaves the skip instruction out' 1 0
 
 echo 'Section 2: the hook in a scratch repository'
 repo=$tmp/repo
@@ -105,6 +111,9 @@ judge 'make hooks installs the hook' "$?" 0 'hooks: installed'
 # rows below filter out, so every row that wants a commit would pass unjudged.
 (cd "$repo" && test -x "$(git rev-parse --git-path hooks/commit-msg)") >"$tmp/err" 2>&1
 judge 'the installed hook is executable' "$?" 0
+hooks=$(cd "$repo" && git rev-parse --path-format=absolute --git-path hooks) || exit 1
+cmp "$src/.githooks/message-policy" "$hooks/message-policy" >"$tmp/err" 2>&1 && test -x "$hooks/message-policy"
+judge 'make hooks installs the policy beside the hook, executable' "$?" 0
 # The branch name and a staged file's name and content carry the em dash,
 # so an editor session refuses a clean message unless its comment lines are
 # dropped and the diff is cut away.
@@ -189,9 +198,34 @@ done
 # session; git records its comment lines, which the CI job then refuses.
 printf 'Clean subject\n\n#\n# note %s\n' "$dash" >"$tmp/F2"
 rec 'a -F file shaped like an editor session passes the hook' 0 1 -- -F "$tmp/F2"
-mv "$repo/.githooks/message-policy" "$tmp/policy.moved"
-com 'a missing policy script cannot be judged' 1 'git commit --no-verify' -- -m 'Clean subject'
-mv "$tmp/policy.moved" "$repo/.githooks/message-policy"
+# The skip instructions are judged with the comment lines kept: git keeps
+# them for a -F file, and GitHub would then run nothing for the push.
+printf 'Clean subject\n\n#\n# [skip ci]\n' >"$tmp/F3"
+rec 'a -F file shaped like an editor session with a skip instruction' 1 1 -- -F "$tmp/F3"
+# An editor session's status lines name the staged files, and the hook
+# cannot tell such a session from a -F file shaped like one, so it refuses.
+printf 'x\n' >"$repo/[skip ci].txt"
+com 'an editor session whose status lines carry a skip instruction' 1 'skip instruction ([skip ci]' -- -e -m 'Clean subject'
+(cd "$repo" && git commit -q --no-verify -m 'Take the file') >"$tmp/err" 2>&1 || bad 'the file commits' 1 0
+mv "$hooks/message-policy" "$tmp/policy.moved"
+com 'a missing policy copy is refused, naming make hooks' 1 'run make hooks' -- -m 'Clean subject'
+mv "$tmp/policy.moved" "$hooks/message-policy"
+# git runs commit-msg for a merge with the merged tree checked out: the
+# installed copy judges it, and the merged branch's own script never runs.
+git -C "$repo" checkout -q -b replaced || exit 1
+printf '#!/bin/sh\ntouch "%s/ran"\nexit 0\n' "$tmp" >"$repo/.githooks/message-policy"
+(cd "$repo" && git commit -q --no-verify -m 'Replace the policy' -- .githooks/message-policy) >"$tmp/err" 2>&1 || bad 'the replacement commits' 1 0
+git -C "$repo" checkout -q plain || exit 1
+stage
+(cd "$repo" && git commit -q -m 'Move plain on') >"$tmp/err" 2>&1 || bad 'plain moves on' 1 0
+(cd "$repo" && git merge -q --no-ff -m "Merge ${dash} replaced" replaced) >"$tmp/err" 2>&1
+got=$?
+[ "$got" = 0 ] || got=1
+judge 'hook: a merge is judged by the installed copy' "$got" 1 'em dash character'
+: >"$tmp/err"
+[ ! -e "$tmp/ran" ]
+judge "hook: the merged branch's policy script never runs" "$?" 0
+git -C "$repo" merge --abort >/dev/null 2>&1
 
 echo
 echo '========================================'
