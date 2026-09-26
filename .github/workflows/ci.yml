@@ -232,9 +232,9 @@ jobs:
       - name: make lint-blame
         run: make lint-blame
 
-  # The Makefile holds the one StyLua pin; the job runs its target. An exact
-  # bun-version needs no GitHub API lookup, so no step here holds the job
-  # token.
+  # The Makefile holds the one StyLua pin; the job runs its target. The
+  # checkout holds the job token for the clone and persists no credential;
+  # setup-bun gets none, since an exact bun-version needs no API lookup.
   format:
     runs-on: ubuntu-latest
     timeout-minutes: 5
