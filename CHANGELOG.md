@@ -19,7 +19,7 @@ All notable changes to this project; versions follow SemVer. From `[Unreleased]`
 
 ### Security
 
-- The takeover-mode lock file is set to mode 0600 before the session token is written to it; an older version applied 0600 only to a file it created, so a lock file that already existed stayed 0644. The loopback preview page still carries the token (SECURITY.md).
+- The takeover-mode lock file is made private (mode 0600) on the open file before the session token is written to it, whatever the file was before; the open's own mode applies only to a file it creates. No released version left the token readable by others: `:MarkdownPreview` has removed the lock before every write since the token joined it in v1.8.0, and the 0644 lock files of v1.7.0 and earlier held no token. The loopback preview page still carries the token (SECURITY.md).
 
 ## [1.10.0] - 2026-07-07
 
