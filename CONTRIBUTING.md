@@ -44,8 +44,13 @@ When the `commits` job is red on your pull request, reword the commit (`git comm
 
 A pull request Dependabot opens is machine-authored, keyed on the pull request's author as GitHub sets it: the `commits` job accepts Dependabot's own `Signed-off-by` line on its commits and does not judge its body, release notes that may break the policy, while the title is judged as any other. Merging one keeps the title (edited down when it runs over 65 characters) and replaces the squash commit's body with one line, because that body lands on main, where the push arm judges it.
 
+## Pull requests
+
+`main` takes squash merges only: the pull request's title becomes the commit's subject, with ` (#N)` appended, and its description the body. A merge needs `ci-ok` green on the branch's latest commit with the branch up to date with `main`, and one approving review; the maintainer's own pull requests merge through the administrator bypass, which the protection leaves open to administrators. An approval survives a later push (stale approvals are not dismissed), so re-read what changed since it before merging. A manual run (`workflow_dispatch`) of the same commit posts the same `ci-ok` context: it judges that commit's message, while the title and the body are judged only on a pull request run.
+
 ## Releases (maintainer)
 
 1. Move the `Unreleased` section of `CHANGELOG.md` under the new version and date, add the version's link definition under `[Unreleased]`'s (newest first), and start the `[Unreleased]` compare link at the new tag.
 2. Tag only a commit whose `ci-ok` is green (`gh run list --commit <sha>`): `git tag -a vX.Y.Z -m "vX.Y.Z"`, `git push origin vX.Y.Z`. The tags v1.0.0 to v1.2.1 are annotated and v1.3.0 to v1.10.0 are lightweight, so `git describe` needs `--tags` until the next annotated tag.
+   The `release tags` ruleset refuses moving or deleting a `v*` tag, so a mistaken tag is fixed by editing the ruleset once (Settings, Rules). The live-server floor is pinned by tag and commit (`LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in `ci.yml`, beside `H.live_server_floor` in `tests/helpers.lua`), and live-server's own `release tags` ruleset keeps that tag from moving; the local action `.github/actions/live-server-floor` reds the gating jobs when the three disagree.
 3. `gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file <the section as a file>`.
